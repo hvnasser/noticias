@@ -79,7 +79,8 @@ def _mostrar_removidas(removidas, regra: str) -> None:
     if removidas:
         print(f"Repetidas ({regra}): {len(removidas)} matérias antigas removidas")
         for n, motivo in removidas:
-            print(f"  - {n.titulo}  ({', '.join(n.fontes)}; {motivo})")
+            print(f"  - {n.titulo}  ({', '.join(n.fontes)}; {motivo}; data no RSS agora: {quando(n)})")
+            print(f"    {n.link}")
 
 
 def processar_temas(por_tema, args, timeout, janela_horas=24):
