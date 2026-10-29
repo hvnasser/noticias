@@ -153,11 +153,39 @@ def _qualidade(n: Noticia) -> tuple:
     return ("news.google.com" not in n.link, bool(n.resumo), len(n.fontes))
 
 
-def agrupar_parecidas(matches: list[Match], genericas: set[str] = frozenset()) -> list[Match]:
+@dataclass
+class Prioridade:
+    """Ordem dos jornais para escolher o link principal de uma notícia que
+    saiu em vários sites, por região da notícia. Cada item é um jornal com
+    um ou mais nomes (ex: ["WSJ", "Wall Street Journal"])."""
+    brasil: list[list[str]] = field(default_factory=list)
+    mundo: list[list[str]] = field(default_factory=list)
+
+    @classmethod
+    def de_dict(cls, d: dict | None) -> "Prioridade":
+        d = d or {}
+        lista = lambda xs: [[x] if isinstance(x, str) else list(x) for x in xs or []]
+        return cls(lista(d.get("brasil")), lista(d.get("mundo")))
+
+    def posicao(self, n: Noticia, regiao: str) -> int:
+        """Posição do jornal da notícia na lista da região (fora da lista = no fim)."""
+        lista = self.brasil if regiao == "brasil" else self.mundo
+        fontes = [normalizar(f) for f in [n.fonte] + n.fontes if f]
+        for i, nomes in enumerate(lista):
+            for nome in nomes:
+                padrao = re.compile(rf"\b{re.escape(normalizar(nome).strip())}\b")
+                if any(padrao.search(f) for f in fontes):
+                    return i
+        return len(lista)
+
+
+def agrupar_parecidas(matches: list[Match], genericas: set[str] = frozenset(),
+                      prioridade: Prioridade | None = None) -> list[Match]:
     """Junta notícias sobre o mesmo fato com títulos diferentes
     (ex: 8 jornais noticiando a mesma recuperação judicial).
     `genericas`: radicais comuns no tema (ex: recup, judic) que sozinhos não
-    bastam para dizer que é a mesma notícia."""
+    bastam para dizer que é a mesma notícia.
+    `prioridade`: ordem dos jornais para escolher o link principal."""
     grupos: list[tuple[list, list[Match]]] = []
     for m in matches:
         palavras = (_radicais(m.noticia.titulo), _nomes_proprios(m.noticia.titulo))
@@ -176,7 +204,13 @@ def agrupar_parecidas(matches: list[Match], genericas: set[str] = frozenset()) -
 
     resultado = []
     for _, membros in grupos:
-        principal = max(membros, key=lambda m: _qualidade(m.noticia))
+        # Região do grupo: a da maioria das matérias (empate = Brasil)
+        brasil = sum(m.regiao == "brasil" for m in membros)
+        regiao = "brasil" if brasil * 2 >= len(membros) else "mundo"
+        prio = prioridade or Prioridade()
+        ordem = lambda m: (-prio.posicao(m.noticia, regiao), _qualidade(m.noticia))
+        membros = sorted(membros, key=ordem, reverse=True)  # "também em" na mesma ordem
+        principal = membros[0]
         for outro in membros:
             if outro is principal:
                 continue
@@ -190,7 +224,13 @@ def agrupar_parecidas(matches: list[Match], genericas: set[str] = frozenset()) -
     return resultado
 
 
-def classificar(noticias: list[Noticia], temas: list[Tema], paises: list[Pais] | None = None) -> list[ResultadoTema]:
+def carregar_prioridade(caminho: str | Path = "temas.yaml") -> Prioridade:
+    dados = yaml.safe_load(Path(caminho).read_text(encoding="utf-8")) or {}
+    return Prioridade.de_dict(dados.get("prioridade_fontes"))
+
+
+def classificar(noticias: list[Noticia], temas: list[Tema], paises: list[Pais] | None = None,
+                prioridade: Prioridade | None = None) -> list[ResultadoTema]:
     paises = paises or []
     resultados = []
     for tema in temas:
@@ -215,6 +255,6 @@ def classificar(noticias: list[Noticia], temas: list[Tema], paises: list[Pais] |
                 continue
             res.noticias.append(Match(n, [c[0] for c in casados], [c[1] for c in casados],
                                       paises=citados, regiao=regiao))
-        res.noticias = agrupar_parecidas(res.noticias, tema.radicais_genericos())
+        res.noticias = agrupar_parecidas(res.noticias, tema.radicais_genericos(), prioridade)
         resultados.append(res)
     return resultados

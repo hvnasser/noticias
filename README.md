@@ -81,6 +81,12 @@ As buscas do Google News (categoria `credito` no `feeds.yaml`) só aceitam
 notícias dos jornais em `google_news_fontes_permitidas`. Se quiser receber
 de um site que está ficando de fora, adicione o nome dele nessa lista.
 
+**Link principal** de uma notícia que saiu em vários sites: segue
+`prioridade_fontes` no `temas.yaml`, pela região da notícia.
+Brasil: Valor, Estadão, O Globo/G1, Folha, depois os demais.
+Mundo: WSJ, FT, Reuters, Bloomberg, depois os demais.
+Os outros sites aparecem em "também em", na mesma ordem.
+
 ## Países
 
 `paises.yaml` lista os países em grupos (`g10`, `em`, `outros`). No tema,
@@ -148,6 +154,19 @@ seção em até 3 dias); as outras ficam em "Mais N matérias sobre o assunto".
 No Supabase, se a mesma história volta com outro jornal como principal (mas
 algum link do grupo já foi gravado nos últimos 3 dias), ela atualiza o
 registro existente em vez de criar outro.
+
+**Notícias antigas que voltam** (ex: recomendadas de novo pelo site, às vezes
+com data nova no RSS) saem da busca. Só vale para a mesma matéria (mesmo link),
+nunca para parecidas:
+- o mesmo link, com o mesmo título, já foi coletado pela primeira vez há mais
+  de 24 horas (o banco é consultado só na última semana). Mesmo link com título
+  diferente é uma versão nova (o WSJ, por exemplo, atualiza a mesma página com
+  o mercado do dia): entra como notícia nova e é gravada à parte;
+- ou a própria página declara (nas marcações oficiais, não no texto) uma data
+  de publicação anterior à janela da busca.
+
+O log da busca lista as matérias removidas e o motivo. No painel, a data de
+uma notícia nunca é posterior à primeira vez que ela foi coletada.
 
 Localmente: `python -m n8news --painel site` e abra `site/index.html`.
 

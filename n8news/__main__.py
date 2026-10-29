@@ -12,16 +12,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .artigo import baixar_textos
-from .banco import Supabase, alinhar_com_banco, id_match, reaproveitar
+from .banco import Supabase, alinhar_com_banco, id_match, mapa_links, reaproveitar, versoes_gravadas
 from .busca import buscar_noticias, carregar_config
 from .envio import enviar_gmail, montar_email, selecionar_novas
 from .painel import gerar_painel
+from .repetidas import remover_datas_antigas, remover_ja_vistas, versoes_novas
 from .paises import carregar_paises
 from .resumo import carregar_config_ia, resumir_temas
-from .temas import carregar_temas, classificar
+from .temas import carregar_prioridade, carregar_temas, classificar
 
 
-JANELA_REPETIDAS = 3  # dias: procura a mesma história gravada nesse período
+JANELA_REPETIDAS = 7  # dias: procura no banco a mesma matéria/história gravada nesse período
 
 
 def quando(n) -> str:
@@ -74,26 +75,38 @@ def imprimir_temas(resultados) -> None:
                 print(f"- {n.titulo}  [{palavra}]")
 
 
-def processar_temas(por_tema, args, timeout):
+def _mostrar_removidas(removidas, regra: str) -> None:
+    if removidas:
+        print(f"Repetidas ({regra}): {len(removidas)} matérias antigas removidas")
+        for n, motivo in removidas:
+            print(f"  - {n.titulo}  ({', '.join(n.fontes)}; {motivo}; data no RSS agora: {quando(n)})")
+            print(f"    {n.link}")
+
+
+def processar_temas(por_tema, args, timeout, janela_horas=24):
     """Texto das matérias, resumo com IA e gravação no Supabase.
     Devolve (avisos, banco ou None, ids de notícias já enviadas por e-mail)."""
     avisos: list[str] = []
     ja_enviadas: set[str] = set()
-    principais = [m for res in por_tema for m in res.noticias]
     banco = None if args.sem_banco else Supabase.do_ambiente()
     if banco is None and not args.sem_banco:
         avisos.append("Supabase não configurado (SUPABASE_URL / SUPABASE_KEY): notícias não foram gravadas")
 
     if banco:
         try:
+            recentes = banco.recentes(datetime.now(timezone.utc) - timedelta(days=JANELA_REPETIDAS))
+            # Matéria que já apareceu há mais de 24h (ex: voltou nas recomendadas do site)
+            versoes = versoes_gravadas(recentes)
+            _mostrar_removidas(remover_ja_vistas(por_tema, versoes, horas=janela_horas), "já vistas no banco")
+            for n, antes in versoes_novas(por_tema, versoes):
+                print(f"Versão nova (mesmo link, título mudou): {n.titulo}  ({antes})")
             # Mesma história já gravada com outro link principal: usa o mesmo registro
-            mapa = banco.mapa_links(datetime.now(timezone.utc) - timedelta(days=JANELA_REPETIDAS))
-            if (n := alinhar_com_banco(por_tema, mapa)):
+            if (n := alinhar_com_banco(por_tema, mapa_links(recentes))):
                 print(f"Banco: {n} notícias já gravadas com outro link (não serão duplicadas)")
         except Exception as e:  # noqa: BLE001
             avisos.append(f"Supabase: não consegui checar repetidas ({e})")
         try:
-            existentes = banco.existentes(list({id_match(m) for m in principais}))
+            existentes = banco.existentes(list({id_match(m) for res in por_tema for m in res.noticias}))
             n = reaproveitar(por_tema, existentes, resumos=not args.refazer_resumos)
             ja_enviadas = {i for i, linha in existentes.items() if linha.get("enviada_em")}
             print(f"Banco: {len(existentes)} notícias já gravadas ({n} resumos reaproveitados)")
@@ -103,8 +116,10 @@ def processar_temas(por_tema, args, timeout):
             banco = None
 
     if not args.sem_texto:
-        ok = baixar_textos([m.noticia for m in principais if not m.resumo_ia], timeout)
+        ok = baixar_textos([m.noticia for res in por_tema for m in res.noticias if not m.resumo_ia], timeout)
         print(f"Texto das matérias: {ok} baixados")
+        # Data declarada pela própria página, antes da IA (não gasta resumo com notícia velha)
+        _mostrar_removidas(remover_datas_antigas(por_tema, horas=janela_horas), "data da página")
 
     if not args.sem_resumo:
         avisos += resumir_temas(por_tema, carregar_config_ia(args.temas))
@@ -179,10 +194,10 @@ def main(argv=None) -> int:
     resultado = buscar_noticias(config)
     temas = carregar_temas(args.temas)
     paises = carregar_paises(args.paises) if Path(args.paises).exists() else []
-    por_tema = classificar(resultado.noticias, temas, paises)
+    por_tema = classificar(resultado.noticias, temas, paises, carregar_prioridade(args.temas))
     avisos, banco, ja_enviadas = [], None, set()
     if not args.todas:
-        avisos, banco, ja_enviadas = processar_temas(por_tema, args, config.timeout_segundos)
+        avisos, banco, ja_enviadas = processar_temas(por_tema, args, config.timeout_segundos, config.janela_horas)
 
     if not args.quieto:
         if args.todas:
