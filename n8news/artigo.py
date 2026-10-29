@@ -29,21 +29,34 @@ def extrair_texto(html: bytes | str) -> str:
     return extrair(html)[0]
 
 
-def _texto_da_noticia(n: Noticia, timeout: float, baixar_fn) -> tuple[str, str]:
+def _baixar_pagina(n: Noticia, timeout: float, baixar_fn) -> bytes | str | None:
     if "news.google.com" in n.link:
+        return None
+    try:
+        return baixar_fn(n.link, timeout)
+    except Exception:  # noqa: BLE001 - página fora do ar não pode parar o robô
+        return None
+
+
+def _extrair_seguro(pagina) -> tuple[str, str]:
+    if not pagina:
         return "", ""
     try:
-        texto, autor = extrair(baixar_fn(n.link, timeout))
+        texto, autor = extrair(pagina)
         return texto[:MAX_CARACTERES], autor
-    except Exception:  # noqa: BLE001 - página fora do ar não pode parar o robô
+    except Exception:  # noqa: BLE001
         return "", ""
 
 
 def baixar_textos(noticias: list[Noticia], timeout: float = 15, baixar_fn=baixar) -> int:
-    """Preenche `texto` das notícias que ainda não têm. Devolve quantas ganharam texto."""
+    """Preenche `texto` das notícias que ainda não têm. Devolve quantas ganharam texto.
+    Baixa as páginas em paralelo, mas extrai o texto uma de cada vez: a
+    extração (lxml) em várias threads pode derrubar o Python ("free(): invalid
+    pointer")."""
     pendentes = [n for n in noticias if not n.texto]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        textos = list(pool.map(lambda n: _texto_da_noticia(n, timeout, baixar_fn), pendentes))
+        paginas = list(pool.map(lambda n: _baixar_pagina(n, timeout, baixar_fn), pendentes))
+    textos = [_extrair_seguro(p) for p in paginas]
     ok = 0
     for n, (texto, autor) in zip(pendentes, textos):
         if autor and not n.autor:

@@ -2,12 +2,12 @@ name: Buscar notícias
 
 on:
   workflow_dispatch:
+  # O relógio principal é o Supabase (supabase/migracoes/003_agendador.sql),
+  # que dispara este workflow 3x ao dia (Brasília 06:53, 12:53 e 18:53).
+  # O agendamento abaixo é só reserva: o do GitHub atrasa ou pula horários,
+  # e quando roda logo depois de uma busca ele é pulado.
   schedule:
-    # Horários de Brasília (o GitHub usa UTC e pode atrasar alguns minutos).
-    # Só funciona com este arquivo no branch principal do repositório.
-    # De 3 em 3 horas: 00:53, 03:53, 06:53, 09:53, 12:53, 15:53, 18:53, 21:53
-    # (minuto quebrado: no minuto 0 o GitHub fica mais cheio e atrasa mais)
-    - cron: "53 */3 * * *"
+    - cron: "53 9,15,21 * * *"
   push:
     paths:
       - "n8news/**"
@@ -23,7 +23,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verificar:
+    # Agendamento reserva do GitHub: não roda se já houve busca há menos de 90 min
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      rodar: ${{ steps.v.outputs.rodar }}
+    steps:
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rodar=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ultima=$(gh run list -R "$GITHUB_REPOSITORY" --workflow buscar-noticias.yml \
+              --branch "${{ github.ref_name }}" --status success --limit 1 \
+              --json createdAt -q '.[0].createdAt' || true)
+            if [ -n "$ultima" ] && [ $(( $(date +%s) - $(date -d "$ultima" +%s) )) -lt 5400 ]; then
+              echo "Última busca em $ultima (menos de 90 min): pulando."
+              rodar=false
+            fi
+          fi
+          echo "rodar=$rodar" >> "$GITHUB_OUTPUT"
+
   buscar:
+    needs: verificar
+    if: needs.verificar.outputs.rodar == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

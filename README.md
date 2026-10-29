@@ -17,9 +17,8 @@ painel no GitHub Pages (o envio por e-mail continua disponível).
       resumo, link e tema, para consultar depois.
 - [x] **4. E-mail pelo Gmail**: notícias do dia por tema e filtro, com link,
       fonte, horário (Brasília) e resumo.
-- [x] **5. Agendado** de 3 em 3 horas (00:53, 03:53, 06:53 ... 21:53,
-      Brasília) pelo GitHub Actions. O GitHub às vezes atrasa ou pula um
-      horário; o seguinte cobre.
+- [x] **5. Agendado** 3x ao dia (06:53, 12:53 e 18:53, Brasília): o Supabase dispara a busca no GitHub (veja *Agendamento*);
+      o agendamento do próprio GitHub fica como reserva.
 - [x] **6. Painel no GitHub Pages**: página com as notícias dos últimos 30
       dias, busca, período, Brasil/Mundo e "só novas desde a última visita".
       O e-mail fica desligado (dá para religar, veja abaixo).
@@ -151,6 +150,29 @@ algum link do grupo já foi gravado nos últimos 3 dias), ela atualiza o
 registro existente em vez de criar outro.
 
 Localmente: `python -m n8news --painel site` e abra `site/index.html`.
+
+## Agendamento (Supabase dispara o GitHub)
+
+O agendamento do próprio GitHub atrasa ou pula horários. Por isso o relógio
+principal é o Supabase: 3x ao dia (Brasília 06:53, 12:53 e 18:53) ele pede ao GitHub para rodar a busca. O agendamento do GitHub
+continua como reserva e é pulado se já houve busca há menos de 90 minutos.
+
+Para ligar (uma vez):
+
+1. **Chave do GitHub** (só para disparar a busca):
+   https://github.com/settings/personal-access-tokens/new
+   - *Token name*: `noticias-supabase`; *Expiration*: o maior prazo que
+     aparecer (anote a data: quando vencer, crie outra e repita o passo 2).
+   - *Repository access*: **Only select repositories** → `noticias`.
+   - *Permissions → Repository permissions → Actions*: **Read and write**.
+   - *Generate token* e copie (começa com `github_pat_`).
+2. **No Supabase**: *SQL Editor → New query*, cole o conteúdo de
+   `supabase/migracoes/003_agendador.sql`, troque `COLE_A_CHAVE_AQUI` pela
+   chave e clique em **Run**. Não salve a chave em nenhum outro lugar.
+3. **Teste**: numa nova query, rode `select privado.disparar_busca_noticias();`
+   e, depois de uns 5 segundos,
+   `select status_code, content from net._http_response order by created desc limit 1;`.
+   `204` = deu certo (a busca aparece em *Actions* no GitHub).
 
 ## E-mail (Gmail) — desligado, fácil de religar
 
