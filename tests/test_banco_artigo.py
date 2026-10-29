@@ -176,7 +176,8 @@ def test_mesma_historia_com_outro_principal_nao_duplica():
     m3 = Match(noticia("Notícia nova", "https://g1.com/nova"), ["RJ"], [""])
     mapa = {"valor.com/a": id_noticia("https://valor.com/a"), "estadao.com/d": "id_azul"}
     assert alinhar_com_banco(resultado(m1, m2, m3), mapa) == 2
-    assert m1.noticia.link == "https://valor.com/a" and m1.relacionadas[0].link == "https://folha.com/b"
+    # O principal continua o de hoje; o registro é o já gravado
+    assert m1.noticia.link == "https://folha.com/b"
     assert id_match(m1) == id_noticia("https://valor.com/a")
     assert id_match(m2) == "id_azul" and m2.noticia.link == "https://g1.com/c"
     assert id_match(m3) == id_noticia("https://g1.com/nova")

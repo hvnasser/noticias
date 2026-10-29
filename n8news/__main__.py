@@ -19,7 +19,7 @@ from .painel import gerar_painel
 from .repetidas import remover_datas_antigas, remover_ja_vistas, versoes_novas
 from .paises import carregar_paises
 from .resumo import carregar_config_ia, resumir_temas
-from .temas import carregar_temas, classificar
+from .temas import carregar_prioridade, carregar_temas, classificar
 
 
 JANELA_REPETIDAS = 7  # dias: procura no banco a mesma matéria/história gravada nesse período
@@ -194,7 +194,7 @@ def main(argv=None) -> int:
     resultado = buscar_noticias(config)
     temas = carregar_temas(args.temas)
     paises = carregar_paises(args.paises) if Path(args.paises).exists() else []
-    por_tema = classificar(resultado.noticias, temas, paises)
+    por_tema = classificar(resultado.noticias, temas, paises, carregar_prioridade(args.temas))
     avisos, banco, ja_enviadas = [], None, set()
     if not args.todas:
         avisos, banco, ja_enviadas = processar_temas(por_tema, args, config.timeout_segundos, config.janela_horas)

@@ -25,6 +25,21 @@
 #               (deixe vazio [] para procurar em todas)
 #   excluir:    notícia com qualquer uma destas palavras sai do tema
 
+# Notícia que saiu em vários sites: qual link vira o principal.
+# A ordem vale conforme a região da notícia (Brasil ou Mundo); jornais fora da
+# lista vêm depois. Um item pode ter vários nomes: [WSJ, Wall Street Journal].
+prioridade_fontes:
+  brasil:
+    - Valor            # Valor Econômico, Valor Investe
+    - Estadão
+    - [O Globo, Globo]
+    - Folha
+  mundo:
+    - [WSJ, Wall Street Journal]
+    - [Financial Times, FT]
+    - Reuters
+    - Bloomberg
+
 # IA: cada tarefa usa o modelo que você escolher.
 #
 # provedor: openrouter (padrão, chave OPENROUTER_API_KEY) ou anthropic

@@ -160,3 +160,36 @@ def test_regiao_da_noticia():
     assert regiao_da_noticia("What has actually battered the bond market?", []) == "mundo"
     assert regiao_da_noticia("Risco-país da Argentina supera 700 pontos", ["ARG"]) == "mundo"
     assert regiao_da_noticia("Petrobras prices bond", ["BRA"]) == "brasil"
+
+
+def test_prioridade_dos_jornais_no_link_principal():
+    from datetime import datetime, timezone
+    from n8news.busca import Noticia
+    from n8news.temas import Match, agrupar_parecidas, carregar_prioridade
+    prio = carregar_prioridade("temas.yaml")
+
+    def m(fonte, link, regiao, titulo="Americanas encerra recuperação judicial após 3 anos"):
+        n = Noticia(titulo, link, "trecho", fonte, "economia", datetime(2026, 10, 29, tzinfo=timezone.utc), [fonte], ["economia"])
+        return Match(n, ["RJ"], [""], regiao=regiao)
+
+    # Brasil: Valor (mesmo pelo Google News) > Estadão > O Globo > Folha > outros
+    grupo = [m("G1", "https://g1.com/a", "brasil"), m("Folha Mercado", "https://folha.com/a", "brasil"),
+             m("Estadão MT", "https://estadao.com/a", "brasil"),
+             m("Valor Econômico", "https://news.google.com/rss/articles/x", "brasil")]
+    assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "Valor Econômico"
+    grupo = [m("G1", "https://g1.com/a", "brasil"), m("O GLOBO", "https://oglobo.com/a", "brasil"),
+             m("Folha", "https://folha.com/a", "brasil")]
+    assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "O GLOBO"
+
+    # Mundo: WSJ > FT > Reuters > Bloomberg > outros
+    t = "Treasury yields fall after Fed holds rates steady at 4.5%"
+    grupo = [m("Bloomberg.com", "https://bloomberg.com/a", "mundo", t), m("Reuters", "https://reuters.com/a", "mundo", t),
+             m("Financial Times", "https://ft.com/a", "mundo", t), m("CNBC", "https://cnbc.com/a", "mundo", t)]
+    assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "Financial Times"
+    grupo.append(m("Wall Street Journal", "https://news.google.com/rss/articles/y", "mundo", t))
+    principal = agrupar_parecidas(grupo, prioridade=prio)[0]
+    assert principal.noticia.fonte == "Wall Street Journal" and len(principal.relacionadas) == 4
+
+    # Ninguém da lista: mantém o critério antigo (link direto, mais fontes)
+    grupo = [m("CNN Brasil", "https://news.google.com/rss/articles/z", "brasil"), m("G1", "https://g1.com/b", "brasil")]
+    assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "G1"

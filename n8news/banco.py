@@ -202,24 +202,21 @@ def id_match(m: Match) -> str:
 
 def alinhar_com_banco(resultados: list[ResultadoTema], mapa: dict[str, str]) -> int:
     """Se a história já está gravada (por qualquer um dos links do grupo),
-    usa o mesmo registro em vez de criar outro. Devolve quantas mudaram."""
+    usa o mesmo registro em vez de criar outro. O link principal continua o
+    escolhido pela prioridade dos jornais; o registro é atualizado com ele.
+    Devolve quantas mudaram."""
     n = 0
     for res in resultados:
         for m in res.noticias:
-            if m.noticia.id_versao or chave_link(m.noticia.link) in mapa:
+            if m.noticia.id_versao:
                 continue
-            eid = next((x.id_versao or mapa.get(chave_link(x.link)) for x in m.relacionadas
-                        if x.id_versao or chave_link(x.link) in mapa), None)
-            if not eid:
-                continue
-            n += 1
-            mesma = next((x for x in m.relacionadas if (x.id_versao or id_noticia(x.link)) == eid), None)
-            if mesma:  # o principal gravado antes está no grupo: volta a ser o principal
-                m.relacionadas.remove(mesma)
-                m.relacionadas.insert(0, m.noticia)
-                m.noticia = mesma
-            else:
+            proprio = id_noticia(m.noticia.link)
+            eid = mapa.get(chave_link(m.noticia.link)) or next(
+                (x.id_versao or mapa.get(chave_link(x.link)) for x in m.relacionadas
+                 if x.id_versao or chave_link(x.link) in mapa), None)
+            if eid and eid != proprio:
                 m.id_banco = eid
+                n += 1
     return n
 
 
