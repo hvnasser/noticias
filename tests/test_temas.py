@@ -177,9 +177,13 @@ def test_prioridade_dos_jornais_no_link_principal():
              m("Estadão MT", "https://estadao.com/a", "brasil"),
              m("Valor Econômico", "https://news.google.com/rss/articles/x", "brasil")]
     assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "Valor Econômico"
-    grupo = [m("G1", "https://g1.com/a", "brasil"), m("O GLOBO", "https://oglobo.com/a", "brasil"),
+    grupo = [m("CNN Brasil", "https://cnn.com/a", "brasil"), m("O GLOBO", "https://oglobo.com/a", "brasil"),
              m("Folha", "https://folha.com/a", "brasil")]
     assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "O GLOBO"
+    # G1 conta como Globo: na frente da Folha
+    grupo = [m("Folha", "https://folha.com/a", "brasil"), m("G1 Economia", "https://g1.com/a", "brasil"),
+             m("CNN Brasil", "https://cnn.com/a", "brasil")]
+    assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "G1 Economia"
 
     # Mundo: WSJ > FT > Reuters > Bloomberg > outros
     t = "Treasury yields fall after Fed holds rates steady at 4.5%"
@@ -191,5 +195,5 @@ def test_prioridade_dos_jornais_no_link_principal():
     assert principal.noticia.fonte == "Wall Street Journal" and len(principal.relacionadas) == 4
 
     # Ninguém da lista: mantém o critério antigo (link direto, mais fontes)
-    grupo = [m("CNN Brasil", "https://news.google.com/rss/articles/z", "brasil"), m("G1", "https://g1.com/b", "brasil")]
-    assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "G1"
+    grupo = [m("CNN Brasil", "https://news.google.com/rss/articles/z", "brasil"), m("InfoMoney", "https://infomoney.com/b", "brasil")]
+    assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "InfoMoney"

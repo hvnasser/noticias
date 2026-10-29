@@ -32,7 +32,7 @@ prioridade_fontes:
   brasil:
     - Valor            # Valor Econômico, Valor Investe
     - Estadão
-    - [O Globo, Globo]
+    - [O Globo, Globo, G1]    # O Globo e G1 contam como um só
     - Folha
   mundo:
     - [WSJ, Wall Street Journal]

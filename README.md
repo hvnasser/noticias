@@ -83,7 +83,7 @@ de um site que está ficando de fora, adicione o nome dele nessa lista.
 
 **Link principal** de uma notícia que saiu em vários sites: segue
 `prioridade_fontes` no `temas.yaml`, pela região da notícia.
-Brasil: Valor, Estadão, O Globo, Folha, depois os demais.
+Brasil: Valor, Estadão, O Globo/G1, Folha, depois os demais.
 Mundo: WSJ, FT, Reuters, Bloomberg, depois os demais.
 Os outros sites aparecem em "também em", na mesma ordem.
 
