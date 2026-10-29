@@ -149,6 +149,17 @@ No Supabase, se a mesma história volta com outro jornal como principal (mas
 algum link do grupo já foi gravado nos últimos 3 dias), ela atualiza o
 registro existente em vez de criar outro.
 
+**Notícias antigas que voltam** (ex: recomendadas de novo pelo site, às vezes
+com data nova no RSS) saem da busca. Só vale para a mesma matéria (mesmo link),
+nunca para parecidas:
+- o link já foi coletado pela primeira vez há mais de 24 horas (o banco é
+  consultado só na última semana);
+- ou a própria página declara (nas marcações oficiais, não no texto) uma data
+  de publicação anterior à janela da busca.
+
+O log da busca lista as matérias removidas e o motivo. No painel, a data de
+uma notícia nunca é posterior à primeira vez que ela foi coletada.
+
 Localmente: `python -m n8news --painel site` e abra `site/index.html`.
 
 ## Agendamento (Supabase dispara o GitHub)
