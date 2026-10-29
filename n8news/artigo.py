@@ -16,13 +16,25 @@ from .busca import Noticia, baixar
 MAX_CARACTERES = 20000
 
 
+# Data só das marcações oficiais da página (meta tags, dados estruturados),
+# nunca "adivinhada" de datas soltas no texto da matéria.
+_PARAMS_DATA = {"original_date": True, "extensive_search": False}
+
+
+def extrair_dados(html: bytes | str) -> tuple[str, str, str]:
+    """Devolve (texto principal, autor, data de publicação AAAA-MM-DD ou "")."""
+    doc = trafilatura.bare_extraction(html, with_metadata=True, include_comments=False,
+                                      include_tables=False, favor_precision=True,
+                                      date_extraction_params=_PARAMS_DATA)
+    if not doc:
+        return "", "", ""
+    return ((getattr(doc, "text", "") or "").strip(), (getattr(doc, "author", "") or "").strip(),
+            (getattr(doc, "date", "") or "").strip())
+
+
 def extrair(html: bytes | str) -> tuple[str, str]:
     """Devolve (texto principal, autor) da página."""
-    doc = trafilatura.bare_extraction(html, with_metadata=True, include_comments=False,
-                                      include_tables=False, favor_precision=True)
-    if not doc:
-        return "", ""
-    return (getattr(doc, "text", "") or "").strip(), (getattr(doc, "author", "") or "").strip()
+    return extrair_dados(html)[:2]
 
 
 def extrair_texto(html: bytes | str) -> str:
@@ -38,14 +50,14 @@ def _baixar_pagina(n: Noticia, timeout: float, baixar_fn) -> bytes | str | None:
         return None
 
 
-def _extrair_seguro(pagina) -> tuple[str, str]:
+def _extrair_seguro(pagina) -> tuple[str, str, str]:
     if not pagina:
-        return "", ""
+        return "", "", ""
     try:
-        texto, autor = extrair(pagina)
-        return texto[:MAX_CARACTERES], autor
+        texto, autor, data = extrair_dados(pagina)
+        return texto[:MAX_CARACTERES], autor, data
     except Exception:  # noqa: BLE001
-        return "", ""
+        return "", "", ""
 
 
 def baixar_textos(noticias: list[Noticia], timeout: float = 15, baixar_fn=baixar) -> int:
@@ -58,9 +70,11 @@ def baixar_textos(noticias: list[Noticia], timeout: float = 15, baixar_fn=baixar
         paginas = list(pool.map(lambda n: _baixar_pagina(n, timeout, baixar_fn), pendentes))
     textos = [_extrair_seguro(p) for p in paginas]
     ok = 0
-    for n, (texto, autor) in zip(pendentes, textos):
+    for n, (texto, autor, data) in zip(pendentes, textos):
         if autor and not n.autor:
             n.autor = autor
+        if data:
+            n.data_pagina = data
         # Só vale se trouxer mais que o trecho do RSS
         if len(texto) > len(n.resumo) + 80:
             n.texto = texto

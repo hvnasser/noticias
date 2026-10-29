@@ -30,7 +30,21 @@ def _link_atualizar() -> str:
     return f"https://github.com/{repo}/actions/workflows/{WORKFLOW}" if repo else ""
 
 
+def _mais_cedo(publicado: str | None, coletado: str | None) -> str | None:
+    """Data a mostrar: a publicação, mas nunca depois da 1ª vez que a matéria
+    foi coletada (o RSS às vezes "republica" matéria antiga com data nova)."""
+    try:
+        p = datetime.fromisoformat(publicado.replace("Z", "+00:00")) if publicado else None
+        c = datetime.fromisoformat(coletado.replace("Z", "+00:00")) if coletado else None
+    except ValueError:
+        return publicado
+    if p and c and p.tzinfo and c.tzinfo and c < p:
+        return coletado
+    return publicado
+
+
 def _item(tema_id, filtros, titulo, link, fontes, outros, paises, publicado, coletado, resumo) -> dict:
+    publicado = _mais_cedo(publicado, coletado)
     return {
         "tema": tema_id,
         "filtro": filtros[0] if filtros else "",

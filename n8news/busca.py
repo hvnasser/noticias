@@ -57,6 +57,7 @@ class Noticia:
     imagem: str | None = None
     texto: str = ""  # texto extraído da página (etapa de artigo)
     autor: str = ""  # autor indicado no RSS ou na página
+    data_pagina: str = ""  # data de publicação declarada pela página (AAAA-MM-DD), se houver
 
     def to_dict(self) -> dict:
         d = self.__dict__.copy()

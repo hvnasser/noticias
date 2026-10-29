@@ -88,17 +88,14 @@ class Supabase:
             if len(lote) < pagina:
                 return linhas
 
-    def mapa_links(self, desde: datetime) -> dict[str, str]:
-        """Link (normalizado) -> id de cada notícia gravada desde a data,
-        incluindo os links de "também em". Serve para reconhecer a mesma
-        história quando outro jornal passa a ser o principal."""
+    def recentes(self, desde: datetime) -> list[dict]:
+        """Notícias gravadas desde a data: id, link, "também em" e 1ª coleta."""
         data = desde.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        mapa: dict[str, str] = {}
-        for linha in self._paginar(f"/noticias?select=id,link,outros_links&coletado_em=gte.{data}&order=coletado_em.asc"):
-            for link in [linha.get("link")] + [o.get("link") for o in linha.get("outros_links") or []]:
-                if link:
-                    mapa.setdefault(chave_link(link), linha["id"])
-        return mapa
+        return self._paginar(f"/noticias?select=id,link,outros_links,coletado_em"
+                             f"&coletado_em=gte.{data}&order=coletado_em.asc")
+
+    def mapa_links(self, desde: datetime) -> dict[str, str]:
+        return mapa_links(self.recentes(desde))
 
     def historico(self, desde: datetime) -> list[dict]:
         """Notícias classificadas em temas desde a data (para o painel).
@@ -159,6 +156,35 @@ class Supabase:
             self._upsert("noticias", "id", list(noticias.values()))
             self._upsert("noticias_temas", "noticia_id,tema", temas)
         return len(noticias)
+
+
+def mapa_links(linhas: list[dict]) -> dict[str, str]:
+    """Link (normalizado) -> id de cada notícia gravada, incluindo os links de
+    "também em". Serve para reconhecer a mesma história quando outro jornal
+    passa a ser o principal."""
+    mapa: dict[str, str] = {}
+    for linha in linhas:
+        for link in [linha.get("link")] + [o.get("link") for o in linha.get("outros_links") or []]:
+            if link:
+                mapa.setdefault(chave_link(link), linha["id"])
+    return mapa
+
+
+def primeiras_coletas(linhas: list[dict]) -> dict[str, datetime]:
+    """Link principal (normalizado) -> quando foi coletado pela primeira vez.
+    Só o link principal: é a data exata em que aquela matéria apareceu."""
+    vistos: dict[str, datetime] = {}
+    for linha in linhas:
+        if not linha.get("link") or not linha.get("coletado_em"):
+            continue
+        try:
+            quando = datetime.fromisoformat(linha["coletado_em"].replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        chave = chave_link(linha["link"])
+        if chave not in vistos or quando < vistos[chave]:
+            vistos[chave] = quando
+    return vistos
 
 
 def id_match(m: Match) -> str:

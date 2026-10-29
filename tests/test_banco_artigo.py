@@ -162,7 +162,7 @@ def test_mapa_links_inclui_tambem_em():
     http = FakeHTTP({"GET": linhas})
     mapa = Supabase("https://abc.supabase.co", "k", enviar=http).mapa_links(datetime(2026, 10, 18, tzinfo=timezone.utc))
     assert mapa == {"g1.com/a": "id1", "valor.com/b": "id1"}
-    assert http.chamadas[0][1].startswith("/noticias?select=id,link,outros_links&coletado_em=gte.2026-10-18T00:00:00Z")
+    assert http.chamadas[0][1].startswith("/noticias?select=id,link,outros_links,coletado_em&coletado_em=gte.2026-10-18T00:00:00Z")
 
 
 def test_mesma_historia_com_outro_principal_nao_duplica():
