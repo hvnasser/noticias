@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from .busca import chave_link
+from .busca import chave_link, chave_titulo
 from .temas import Match, ResultadoTema
 
 LOTE = 50
@@ -89,9 +89,9 @@ class Supabase:
                 return linhas
 
     def recentes(self, desde: datetime) -> list[dict]:
-        """Notícias gravadas desde a data: id, link, "também em" e 1ª coleta."""
+        """Notícias gravadas desde a data: id, link, título, "também em" e 1ª coleta."""
         data = desde.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        return self._paginar(f"/noticias?select=id,link,outros_links,coletado_em"
+        return self._paginar(f"/noticias?select=id,link,titulo,outros_links,coletado_em"
                              f"&coletado_em=gte.{data}&order=coletado_em.asc")
 
     def mapa_links(self, desde: datetime) -> dict[str, str]:
@@ -170,10 +170,17 @@ def mapa_links(linhas: list[dict]) -> dict[str, str]:
     return mapa
 
 
-def primeiras_coletas(linhas: list[dict]) -> dict[str, datetime]:
-    """Link principal (normalizado) -> quando foi coletado pela primeira vez.
-    Só o link principal: é a data exata em que aquela matéria apareceu."""
-    vistos: dict[str, datetime] = {}
+def id_versao(link: str, titulo: str) -> str:
+    """Id de uma nova versão da matéria: mesmo link, título diferente
+    (alguns jornais atualizam a mesma página com conteúdo novo)."""
+    return hashlib.sha1(f"{chave_link(link)}|{chave_titulo(titulo)}".encode()).hexdigest()
+
+
+def versoes_gravadas(linhas: list[dict]) -> dict[str, list[dict]]:
+    """Link (normalizado) -> versões gravadas: [{id, titulo, coletado}], a mais
+    antiga primeiro. Só o link principal: é a data exata em que aquela
+    matéria apareceu."""
+    versoes: dict[str, list[dict]] = {}
     for linha in linhas:
         if not linha.get("link") or not linha.get("coletado_em"):
             continue
@@ -181,15 +188,16 @@ def primeiras_coletas(linhas: list[dict]) -> dict[str, datetime]:
             quando = datetime.fromisoformat(linha["coletado_em"].replace("Z", "+00:00"))
         except ValueError:
             continue
-        chave = chave_link(linha["link"])
-        if chave not in vistos or quando < vistos[chave]:
-            vistos[chave] = quando
-    return vistos
+        versoes.setdefault(chave_link(linha["link"]), []).append(
+            {"id": linha["id"], "titulo": linha.get("titulo") or "", "coletado": quando})
+    for lista in versoes.values():
+        lista.sort(key=lambda v: v["coletado"])
+    return versoes
 
 
 def id_match(m: Match) -> str:
     """Id da notícia no banco: o já gravado para a história, ou o do link."""
-    return m.id_banco or id_noticia(m.noticia.link)
+    return m.id_banco or m.noticia.id_versao or id_noticia(m.noticia.link)
 
 
 def alinhar_com_banco(resultados: list[ResultadoTema], mapa: dict[str, str]) -> int:
@@ -198,14 +206,14 @@ def alinhar_com_banco(resultados: list[ResultadoTema], mapa: dict[str, str]) -> 
     n = 0
     for res in resultados:
         for m in res.noticias:
-            if chave_link(m.noticia.link) in mapa:
+            if m.noticia.id_versao or chave_link(m.noticia.link) in mapa:
                 continue
-            grupo = [m.noticia] + m.relacionadas
-            eid = next((mapa[k] for k in (chave_link(x.link) for x in grupo) if k in mapa), None)
+            eid = next((x.id_versao or mapa.get(chave_link(x.link)) for x in m.relacionadas
+                        if x.id_versao or chave_link(x.link) in mapa), None)
             if not eid:
                 continue
             n += 1
-            mesma = next((x for x in m.relacionadas if id_noticia(x.link) == eid), None)
+            mesma = next((x for x in m.relacionadas if (x.id_versao or id_noticia(x.link)) == eid), None)
             if mesma:  # o principal gravado antes está no grupo: volta a ser o principal
                 m.relacionadas.remove(mesma)
                 m.relacionadas.insert(0, m.noticia)

@@ -152,8 +152,10 @@ registro existente em vez de criar outro.
 **Notícias antigas que voltam** (ex: recomendadas de novo pelo site, às vezes
 com data nova no RSS) saem da busca. Só vale para a mesma matéria (mesmo link),
 nunca para parecidas:
-- o link já foi coletado pela primeira vez há mais de 24 horas (o banco é
-  consultado só na última semana);
+- o mesmo link, com o mesmo título, já foi coletado pela primeira vez há mais
+  de 24 horas (o banco é consultado só na última semana). Mesmo link com título
+  diferente é uma versão nova (o WSJ, por exemplo, atualiza a mesma página com
+  o mercado do dia): entra como notícia nova e é gravada à parte;
 - ou a própria página declara (nas marcações oficiais, não no texto) uma data
   de publicação anterior à janela da busca.
 

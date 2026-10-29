@@ -1,9 +1,11 @@
 """Tira notícias antigas que voltam aos feeds (ex: recomendadas de novo pelo
 site, às vezes com data nova no RSS).
 
-Duas regras, só com a MESMA matéria (mesmo link), nunca com parecidas:
-1. Supabase: o link já foi coletado pela primeira vez há mais de 24 horas
-   (olhando só a última semana).
+Duas regras, só com a MESMA matéria, nunca com parecidas:
+1. Supabase: o mesmo link, com o mesmo título, já foi coletado pela primeira
+   vez há mais de 24 horas (olhando só a última semana). Mesmo link com
+   título diferente é uma versão nova (alguns jornais, como o WSJ, atualizam
+   a mesma página): entra como notícia nova e é gravada à parte.
 2. Página: a data de publicação declarada pelo site (meta tags) é anterior
    à janela da busca.
 Num grupo de matérias sobre o mesmo fato, sai só a matéria antiga; se a
@@ -15,7 +17,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from .busca import Noticia, chave_link
+from .banco import id_noticia, id_versao
+from .busca import Noticia, chave_link, chave_titulo
 from .temas import ResultadoTema
 
 FUSO = ZoneInfo("America/Sao_Paulo")
@@ -45,19 +48,48 @@ def _filtrar(resultados: list[ResultadoTema], velha) -> list[tuple[Noticia, str]
     return removidas
 
 
-def remover_ja_vistas(resultados: list[ResultadoTema], vistos: dict[str, datetime],
+def remover_ja_vistas(resultados: list[ResultadoTema], versoes: dict[str, list[dict]],
                       agora: datetime | None = None, horas: float = 24) -> list[tuple[Noticia, str]]:
-    """Tira as matérias cujo link apareceu pela primeira vez há mais de `horas`."""
+    """Tira as matérias (mesmo link e mesmo título) vistas pela primeira vez há
+    mais de `horas`. Mesmo link com outro título vira uma versão nova."""
     agora = agora or datetime.now(timezone.utc)
     limite = agora - timedelta(hours=horas)
 
+    def iguais(n: Noticia) -> list[dict]:
+        return [v for v in versoes.get(chave_link(n.link), []) if chave_titulo(v["titulo"]) == chave_titulo(n.titulo)]
+
     def velha(n: Noticia) -> str:
-        primeira = vistos.get(chave_link(n.link))
-        if primeira and primeira < limite:
-            return f"já apareceu em {primeira.astimezone(FUSO):%d/%m %H:%M}"
+        mesma = iguais(n)
+        if mesma and mesma[0]["coletado"] < limite:
+            return f"já apareceu em {mesma[0]['coletado'].astimezone(FUSO):%d/%m %H:%M} com o mesmo título"
         return ""
 
-    return _filtrar(resultados, velha)
+    removidas = _filtrar(resultados, velha)
+    # As que ficam: aponta para o registro certo no banco
+    for res in resultados:
+        for m in res.noticias:
+            for n in [m.noticia] + m.relacionadas:
+                if not versoes.get(chave_link(n.link)):
+                    continue
+                mesma = iguais(n)
+                if mesma:  # mesma versão, ainda recente
+                    if mesma[0]["id"] != id_noticia(n.link):
+                        n.id_versao = mesma[0]["id"]
+                else:  # mesmo link, título novo: versão nova
+                    n.id_versao = id_versao(n.link, n.titulo)
+    return removidas
+
+
+def versoes_novas(resultados: list[ResultadoTema], versoes: dict[str, list[dict]]) -> list[tuple[Noticia, str]]:
+    """Para o log: principais que são versão nova de um link já gravado."""
+    saida = []
+    for res in resultados:
+        for m in res.noticias:
+            antigas = versoes.get(chave_link(m.noticia.link)) or []
+            if antigas and m.noticia.id_versao and m.noticia.id_versao not in {v["id"] for v in antigas}:
+                saida.append((m.noticia, f"antes: \"{antigas[-1]['titulo']}\" em "
+                                         f"{antigas[-1]['coletado'].astimezone(FUSO):%d/%m %H:%M}"))
+    return saida
 
 
 def remover_datas_antigas(resultados: list[ResultadoTema], agora: datetime | None = None,

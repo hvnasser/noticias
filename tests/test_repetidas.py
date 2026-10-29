@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from n8news.artigo import extrair_dados
-from n8news.banco import primeiras_coletas
+from n8news.banco import id_match, id_noticia, id_versao, versoes_gravadas
 from n8news.busca import Noticia
 from n8news.repetidas import remover_datas_antigas, remover_ja_vistas
 from n8news.temas import Filtro, Match, ResultadoTema, Tema
@@ -20,11 +20,15 @@ def res(*matches):
     return [ResultadoTema(TEMA, list(matches))]
 
 
+TITULOS = {"a": "Americanas encerra RJ", "b": "Azul conclui Chapter 11"}
+
+
 def vistos(**horas_atras):
-    """link -> 1ª coleta, a partir de {link_curto: horas atrás}."""
-    linhas = [{"link": f"https://valor.com/{k}", "coletado_em": (AGORA - timedelta(hours=h)).isoformat()}
-              for k, h in horas_atras.items()]
-    return primeiras_coletas(linhas)
+    """Versões gravadas, a partir de {link_curto: horas atrás} (título de TITULOS)."""
+    linhas = [{"id": id_noticia(f"https://valor.com/{k}"), "link": f"https://valor.com/{k}",
+               "titulo": TITULOS.get(k, "Ri Happy pede RE"),
+               "coletado_em": (AGORA - timedelta(hours=h)).isoformat()} for k, h in horas_atras.items()]
+    return versoes_gravadas(linhas)
 
 
 def test_remove_so_o_mesmo_link_visto_ha_mais_de_24h():
@@ -34,26 +38,51 @@ def test_remove_so_o_mesmo_link_visto_ha_mais_de_24h():
     r = res(velha, recente, parecida)
     removidas = remover_ja_vistas(r, vistos(a=30, b=10), AGORA)
     assert [x.titulo for x, _ in removidas] == ["Americanas encerra RJ"]
-    assert "já apareceu em" in removidas[0][1]
+    assert "já apareceu em" in removidas[0][1] and "mesmo título" in removidas[0][1]
     assert [m.noticia.link for m in r[0].noticias] == ["https://valor.com/b", "https://valor.com/outra"]
 
 
 def test_no_grupo_sai_so_a_materia_velha_e_a_proxima_assume():
-    velha, nova = n("Ri Happy pede RE", "https://valor.com/a"), n("Ri Happy: MP opina", "https://g1.com/c", "G1")
+    velha, nova = n("Ri Happy pede RE", "https://valor.com/r"), n("Ri Happy: MP opina", "https://g1.com/c", "G1")
     m = Match(velha, ["RJ"], [""], relacionadas=[nova], resumo_ia="resumo da velha", id_banco="x")
     r = res(m)
-    remover_ja_vistas(r, vistos(a=50), AGORA)
+    remover_ja_vistas(r, vistos(r=50), AGORA)
     assert r[0].noticias[0].noticia is nova and r[0].noticias[0].relacionadas == []
     assert r[0].noticias[0].resumo_ia == "" and r[0].noticias[0].id_banco == ""
 
 
-def test_primeira_coleta_usa_so_link_principal_e_a_mais_antiga():
-    linhas = [{"link": "https://valor.com/a", "coletado_em": "2026-10-28T10:00:00+00:00",
+def test_versoes_gravadas_por_link_mais_antiga_primeiro():
+    linhas = [{"id": "v2", "link": "https://valor.com/a", "titulo": "T2", "coletado_em": "2026-10-28T10:00:00+00:00",
                "outros_links": [{"link": "https://g1.com/x"}]},
-              {"link": "https://valor.com/a", "coletado_em": "2026-10-27T10:00:00+00:00"},
-              {"link": "https://valor.com/b", "coletado_em": None}]
-    v = primeiras_coletas(linhas)
-    assert v == {"valor.com/a": datetime(2026, 10, 27, 10, tzinfo=timezone.utc)}
+              {"id": "v1", "link": "https://valor.com/a", "titulo": "T1", "coletado_em": "2026-10-27T10:00:00+00:00"},
+              {"id": "x", "link": "https://valor.com/b", "coletado_em": None}]
+    v = versoes_gravadas(linhas)
+    assert list(v) == ["valor.com/a"] and [x["id"] for x in v["valor.com/a"]] == ["v1", "v2"]
+
+
+def test_mesmo_link_com_titulo_novo_e_versao_nova_e_fica():
+    """WSJ: a mesma página atualizada com o mercado de outro dia."""
+    link = "https://wsj.com/treasuries"
+    linhas = [{"id": id_noticia(link), "link": link, "titulo": "Treasury Yields Mixed as Markets Price In a Fed Hold",
+               "coletado_em": (AGORA - timedelta(days=3)).isoformat()}]
+    m = Match(n("Treasury Yields Mixed After Fed Hold", link, "WSJ"), ["RJ"], [""])
+    r = res(m)
+    assert remover_ja_vistas(r, versoes_gravadas(linhas), AGORA) == []
+    assert r[0].noticias == [m]
+    assert id_match(m) == id_versao(link, "Treasury Yields Mixed After Fed Hold") != id_noticia(link)
+
+
+def test_versao_nova_ja_gravada_usa_o_mesmo_registro_e_depois_de_24h_sai():
+    link = "https://wsj.com/treasuries"
+    v2 = id_versao(link, "Yields Fall")
+    linhas = [{"id": id_noticia(link), "link": link, "titulo": "Yields Rise", "coletado_em": (AGORA - timedelta(days=3)).isoformat()},
+              {"id": v2, "link": link, "titulo": "Yields Fall", "coletado_em": (AGORA - timedelta(hours=5)).isoformat()}]
+    m = Match(n("Yields Fall", link, "WSJ"), ["RJ"], [""])
+    remover_ja_vistas(res(m), versoes_gravadas(linhas), AGORA)
+    assert id_match(m) == v2
+    velha = Match(n("Yields Rise", link, "WSJ"), ["RJ"], [""])  # a versão de 3 dias atrás voltou
+    r = res(velha)
+    assert len(remover_ja_vistas(r, versoes_gravadas(linhas), AGORA)) == 1 and r[0].noticias == []
 
 
 def test_data_da_pagina_antiga_sai_recente_ou_sem_data_fica():
