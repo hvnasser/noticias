@@ -19,6 +19,9 @@ painel no GitHub Pages (o envio por e-mail continua disponível).
       fonte, horário (Brasília) e resumo.
 - [x] **5. Agendado** 3x ao dia (06:53, 12:53 e 18:53, Brasília): o Supabase dispara a busca no GitHub (veja *Agendamento*);
       o agendamento do próprio GitHub fica como reserva.
+- [x] **7. Tema Bancos centrais**: BCB, Fed, BCE, Banco da Inglaterra,
+      Banco do Japão e Banco do Povo da China, mais tudo que Alex Ribeiro
+      (Valor) e Nick Timiraos (WSJ) assinam. Cada tema é uma aba no painel.
 - [x] **6. Painel no GitHub Pages**: página com as notícias dos últimos 30
       dias, busca, período, Brasil/Mundo e "só novas desde a última visita".
       O e-mail fica desligado (dá para religar, veja abaixo).
@@ -86,6 +89,12 @@ de um site que está ficando de fora, adicione o nome dele nessa lista.
 Brasil: Valor, Estadão, O Globo/G1, Folha, depois os demais.
 Mundo: WSJ, FT, Reuters, Bloomberg, depois os demais.
 Os outros sites aparecem em "também em", na mesma ordem.
+
+**Abas:** cada tema do `temas.yaml` vira uma aba no painel (o painel lembra a
+última aba aberta). Para criar um tema novo, copie um bloco `- id: ...` no
+`temas.yaml`, com `descricao` (a IA usa para decidir o que é do tema) e
+filtros. Colunistas: uma busca no `feeds.yaml` com o nome da pessoa e um filtro
+com `feeds: [categoria da busca]`; o que vem dela entra sempre (a IA não tira).
 
 ## Países
 

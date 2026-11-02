@@ -131,3 +131,10 @@ def test_botao_atualizar_aponta_para_o_workflow(tmp_path, monkeypatch):
     monkeypatch.delenv("GITHUB_REPOSITORY")
     arquivo, _, _ = gerar_painel(tmp_path, [TEMA], [], banco=None)
     assert '"atualizar": ""' in arquivo.read_text()
+
+
+def test_painel_tem_abas_por_tema(tmp_path):
+    from n8news.temas import carregar_temas
+    arquivo, _, _ = gerar_painel(tmp_path, carregar_temas("temas.yaml"), [], banco=None)
+    html = arquivo.read_text()
+    assert 'id="abas"' in html and '"id": "bancos_centrais"' in html and 'id="tema"' not in html
