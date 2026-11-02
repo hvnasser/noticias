@@ -65,12 +65,13 @@ def test_fora_do_tema(bc, paises):
 def test_colunistas_entram_por_busca_ou_autor(bc, paises):
     res = classificar([
         n("Officials split on December move", "colunistas_bc", fonte="WSJ"),  # busca pelo nome
-        n("A armadilha da comunicação", autor="Alex Ribeiro"),                # autor no RSS
+        n("A armadilha da comunicação", autor="Alex Ribeiro", fonte="Valor Econômico"),  # autor no RSS
+        n("WSJ's Nick Timiraos on what to expect", "colunistas_bc", fonte="MarketWatch"),  # outro site: não
         n("Outra coluna sem relação", autor="Fulano"),
     ], [bc], paises)[0]
     assert secoes(res) == {
-        "Officials split on December move": "Colunas — Alex Ribeiro e Nick Timiraos",
-        "A armadilha da comunicação": "Colunas — Alex Ribeiro e Nick Timiraos",
+        "Officials split on December move": "Colunistas: Alex Ribeiro e Nick Timiraos",
+        "A armadilha da comunicação": "Colunistas: Alex Ribeiro e Nick Timiraos",
     }
     assert all(m.garantida for m in res.noticias)
 

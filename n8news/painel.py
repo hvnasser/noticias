@@ -65,9 +65,13 @@ def montar_dados(temas: list[Tema], atuais: list[ResultadoTema], historico: list
     agora = agora or datetime.now(timezone.utc)
     itens: dict[tuple[str, str], dict] = {}
 
+    # Filtros que existem hoje em cada tema: notícia antiga de filtro apagado ou
+    # renomeado (ou de tema que saiu) não aparece mais no painel
+    validos = {t.id: {f.nome for f in t.filtros} for t in temas}
     for linha in historico:
         n = linha.get("noticias") or {}
-        if not n.get("titulo"):
+        filtros = linha.get("filtros") or []
+        if not n.get("titulo") or not filtros or filtros[0] not in validos.get(linha.get("tema"), set()):
             continue
         outros = [{"fonte": o.get("fonte", ""), "link": o.get("link", "")} for o in n.get("outros_links") or []]
         itens[(n["id"], linha["tema"])] = _item(

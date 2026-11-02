@@ -153,8 +153,10 @@ feeds:
   # ---------- Bancos centrais (BCB, Fed, BCE, BoE, BoJ, PBoC) ----------
   - { fonte: Google News, categoria: bancos_centrais, url: "https://news.google.com/rss/search?q=%22Banco+Central%22+OR+Copom+OR+Gal%C3%ADpolo+OR+%22pol%C3%ADtica+monet%C3%A1ria%22+OR+%22Banco+Central+Europeu%22+OR+%22Banco+do+Jap%C3%A3o%22+OR+%22Banco+da+Inglaterra%22+OR+%22banco+central+chin%C3%AAs%22+when%3A1d&hl=pt-BR&gl=BR&ceid=BR:pt-419" }
   - { fonte: Google News, categoria: bancos_centrais, url: "https://news.google.com/rss/search?q=%28%22Federal+Reserve%22+OR+FOMC+OR+%22European+Central+Bank%22+OR+%22Bank+of+England%22+OR+%22Bank+of+Japan%22+OR+%22People%27s+Bank+of+China%22+OR+PBOC%29+%28site%3Areuters.com+OR+site%3Abloomberg.com+OR+site%3Aft.com+OR+site%3Awsj.com+OR+site%3Acnbc.com+OR+site%3Abarrons.com+OR+site%3Amarketwatch.com+OR+site%3Aapnews.com%29+when%3A1d&hl=en-US&gl=US&ceid=US:en" }
-  # Colunistas: tudo o que assinam entra no tema (Nick Timiraos no WSJ, Alex Ribeiro no Valor)
-  - { fonte: Google News, categoria: colunistas_bc, url: "https://news.google.com/rss/search?q=%22Nick+Timiraos%22+site%3Awsj.com+when%3A2d&hl=en-US&gl=US&ceid=US:en" }
+  # Colunistas: buscas pelo nome. O filtro do tema só aceita o que vem do jornal
+  # do colunista (WSJ para o Timiraos, Valor para o Alex Ribeiro).
+  # Obs: "site:wsj.com" junto com o nome faz o Google News devolver o WSJ inteiro.
+  - { fonte: Google News, categoria: colunistas_bc, url: "https://news.google.com/rss/search?q=%22Nick+Timiraos%22+when%3A2d&hl=en-US&gl=US&ceid=US:en" }
   - { fonte: Google News, categoria: colunistas_bc, url: "https://news.google.com/rss/search?q=%22Alex+Ribeiro%22+site%3Avalor.globo.com+when%3A2d&hl=pt-BR&gl=BR&ceid=BR:pt-419" }
 
   # ---------- Tecnologia ----------

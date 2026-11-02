@@ -32,6 +32,7 @@ class Filtro:
     exceto: list[str] = field(default_factory=list)  # se aparecer, o filtro não pega a notícia
     autores: list[str] = field(default_factory=list)  # pega tudo que essas pessoas assinam
     feeds: list[str] = field(default_factory=list)    # pega tudo que vem dessas categorias do feeds.yaml
+    fontes: list[str] = field(default_factory=list)   # com autores/feeds: só vale para estes jornais
     ativo: bool = True
     regiao: str | None = None      # "brasil" ou "mundo": só pega notícias dessa região
     separar_brasil: bool = True    # no e-mail, divide o filtro em Brasil / Mundo
@@ -41,6 +42,7 @@ class Filtro:
         self._exige = compilar(self.exige)
         self._exceto = compilar(self.exceto)
         self._autores = compilar(self.autores)
+        self._fontes = compilar(self.fontes)
 
     def casa(self, texto_norm: str) -> str | None:
         """Retorna a palavra que fez a notícia passar, ou None."""
@@ -53,6 +55,8 @@ class Filtro:
 
     def casa_direto(self, n: Noticia) -> str | None:
         """Pega a notícia pelo autor ou pela busca de onde veio (sem olhar palavras)."""
+        if self._fontes and not any(primeira(self._fontes, normalizar(f)) for f in [n.fonte] + n.fontes):
+            return None
         if self.feeds and set(n.categorias or [n.categoria]) & set(self.feeds):
             return f"busca: {n.categoria}"
         if self._autores and n.autor and (a := primeira(self._autores, normalizar(n.autor))):

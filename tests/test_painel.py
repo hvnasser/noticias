@@ -138,3 +138,10 @@ def test_painel_tem_abas_por_tema(tmp_path):
     arquivo, _, _ = gerar_painel(tmp_path, carregar_temas("temas.yaml"), [], banco=None)
     html = arquivo.read_text()
     assert 'id="abas"' in html and '"id": "bancos_centrais"' in html and 'id="tema"' not in html
+
+
+def test_painel_ignora_historico_de_filtro_que_nao_existe_mais():
+    hist = [historico_linha("https://a", "Notícia de filtro atual"),
+            historico_linha("https://b", "Notícia de filtro renomeado", filtro="Nome antigo")]
+    d = montar_dados([TEMA], [], hist, AGORA)
+    assert [i["titulo"] for i in d["noticias"]] == ["Notícia de filtro atual"]

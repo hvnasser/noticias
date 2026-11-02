@@ -32,6 +32,7 @@
 #   autores: pega tudo que essas pessoas assinam (quando o feed informa o autor)
 #   feeds:   pega tudo que vem dessas categorias do feeds.yaml (ex: uma busca
 #            pelo nome de um colunista). A IA não tira essas notícias do tema.
+#   fontes:  junto com autores/feeds, só aceita notícias destes jornais
 
 # Notícia que saiu em vários sites: qual link vira o principal.
 # A ordem vale conforme a região da notícia (Brasil ou Mundo); jornais fora da
@@ -386,10 +387,11 @@ temas:
       - credit card*
 
     filtros:
-      - nome: Colunas — Alex Ribeiro e Nick Timiraos
+      - nome: "Colunistas: Alex Ribeiro e Nick Timiraos"
         separar_brasil: false
         feeds: [colunistas_bc]           # buscas pelos nomes (feeds.yaml)
         autores: [Alex Ribeiro, Nick Timiraos]
+        fontes: [Valor, WSJ, Wall Street Journal]   # só o que sai no jornal deles
 
       - nome: Banco Central do Brasil
         regiao: brasil
@@ -424,6 +426,7 @@ temas:
           - Federal Reserve
           - FOMC
           - Fed
+          - Warsh          # Kevin Warsh, presidente do Fed
           - Powell
           - banco central americano
           - banco central norte-americano
@@ -443,6 +446,7 @@ temas:
           - monetár*
           - monetary
           - Powell
+          - Warsh
           - FOMC
           - Federal Reserve
           - chair*
