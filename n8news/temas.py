@@ -97,6 +97,7 @@ class Match:
     regiao: str = "mundo"   # "brasil" ou "mundo"
     id_banco: str = ""      # id já gravado no Supabase para esta história (se diferente do link)
     garantida: bool = False  # autor confirmado (ex: colunista): a IA não tira do tema
+    so_busca: bool = False   # entrou só pela busca pelo nome: a IA sempre confere
 
 
 @dataclass
@@ -285,7 +286,8 @@ def classificar(noticias: list[Noticia], temas: list[Tema], paises: list[Pais] |
                 res.excluidas.append((n, "país fora da lista: " + ", ".join(citados)))
                 continue
             res.noticias.append(Match(n, [c[0] for c in casados], [c[1] for c in casados],
-                                      paises=citados, regiao=regiao, garantida=confirmada))
+                                      paises=citados, regiao=regiao, garantida=confirmada,
+                                      so_busca=bool(diretos) and not confirmada and len(casados) == len(diretos)))
         res.noticias = agrupar_parecidas(res.noticias, tema.radicais_genericos(), prioridade)
         resultados.append(res)
     return resultados

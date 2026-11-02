@@ -112,3 +112,14 @@ def test_pagina_de_autor_vira_noticias_com_autor():
     r = buscar_noticias(Config([feed]), agora, baixar_fn=lambda url, t: html.encode())
     assert [(n.titulo, n.autor) for n in r.noticias] == [("Análise: Copom enfrenta teste como única âncora", "Alex Ribeiro")]
     assert r.noticias[0].publicado_em == datetime(2026, 11, 2, 15, tzinfo=timezone.utc)
+
+
+def test_busca_pelo_nome_e_conferida_mesmo_com_resumo_gravado(bc, paises):
+    res = classificar([n("Talarico rejects left-right politics", "colunistas_bc", fonte="WSJ"),
+                       n("Fed officials split on December cut", "colunistas_bc", fonte="WSJ")], [bc], paises)
+    for m in res[0].noticias:
+        m.resumo_ia = "resumo já gravado"
+    assert [m.so_busca for m in res[0].noticias] == [True, False]  # a 2ª também casa com "Fed"
+    ia = FakeIA([ecoa("relevante", False)])
+    resumir_temas(res, ConfigIA(tarefas={"relevancia": Tarefa("m"), "resumo": Tarefa("m")}), ia)
+    assert [m.noticia.titulo for m in res[0].noticias] == ["Fed officials split on December cut"]

@@ -189,7 +189,7 @@ def _rodar(cliente, tarefa: Tarefa, sistema: str, schema: dict, campo: str, tema
 
 def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) -> list[str]:
     """Aplica relevância e resumo. Devolve avisos (vazio = tudo ok)."""
-    pendentes_total = sum(1 for r in resultados for m in r.noticias if not m.resumo_ia)
+    pendentes_total = sum(1 for r in resultados for m in r.noticias if not m.resumo_ia or m.so_busca)
     if not pendentes_total:
         return []
     if not any(cfg.tarefa(n).ativo for n in ("relevancia", "resumo")):
@@ -206,13 +206,16 @@ def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) 
         for res in resultados:
             nome = res.tema.nome
             pendentes = [m for m in res.noticias if not m.resumo_ia]  # já resumidas: reaproveita
+            # Entrou só pela busca pelo nome (sem palavra-chave nem autor confirmado):
+            # a IA sempre confere, mesmo se o resumo já estava gravado
+            conferir = pendentes + [m for m in res.noticias if m.resumo_ia and m.so_busca]
 
             relev = cfg.tarefa("relevancia", res.tema)
             opiniao: dict[int, str] = {}  # id(match) -> autor
-            if relev.ativo and pendentes:
+            if relev.ativo and conferir:
                 vals = _rodar(cliente, relev, SISTEMA_RELEVANCIA, SCHEMA_RELEVANCIA, "relevante",
-                              res.tema, pendentes, cfg.max_por_chamada, avisos, "relevância")
-                for m in pendentes:
+                              res.tema, conferir, cfg.max_por_chamada, avisos, "relevância")
+                for m in conferir:
                     item = vals.get(id(m))
                     if item:
                         # Colunista/busca dedicada: entra sempre, mesmo se a IA discordar
