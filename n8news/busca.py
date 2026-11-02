@@ -35,7 +35,7 @@ class Feed:
     url: str
     ativo: bool = True
     tipo: str = "rss"   # "rss" ou "pagina" (página de autor de um jornal, ex: Valor)
-    autor: str = ""     # tipo pagina: quem assina tudo o que está na página
+    autor: str = ""     # quem assina tudo o que vem deste feed (ex: página de colunista)
 
 
 @dataclass
@@ -290,7 +290,7 @@ def buscar_noticias(config: Config, agora: datetime | None = None, baixar_fn=bai
                     existente.fontes.append(fonte)
                 if not existente.resumo:
                     existente.resumo = resumo
-                if not existente.autor and (autor := limpar_texto(entrada.get("author"))):
+                if not existente.autor and (autor := limpar_texto(entrada.get("author")) or feed.autor):
                     existente.autor = autor
                 continue
 
@@ -304,7 +304,7 @@ def buscar_noticias(config: Config, agora: datetime | None = None, baixar_fn=bai
                 fontes=[fonte],
                 categorias=[feed.categoria],
                 imagem=imagem_da_entrada(entrada),
-                autor=limpar_texto(entrada.get("author")),
+                autor=limpar_texto(entrada.get("author")) or feed.autor,
             )
             por_link[k_link] = n
             por_titulo[k_titulo] = n

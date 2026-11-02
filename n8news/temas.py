@@ -287,7 +287,9 @@ def classificar(noticias: list[Noticia], temas: list[Tema], paises: list[Pais] |
                 continue
             res.noticias.append(Match(n, [c[0] for c in casados], [c[1] for c in casados],
                                       paises=citados, regiao=regiao, garantida=confirmada,
-                                      so_busca=bool(diretos) and not confirmada and len(casados) == len(diretos)))
+                                      so_busca=bool(diretos) and not confirmada and not any(
+                                          (not f.regiao or f.regiao == regiao) and f.casa(texto)
+                                          for f in tema.filtros)))
         res.noticias = agrupar_parecidas(res.noticias, tema.radicais_genericos(), prioridade)
         resultados.append(res)
     return resultados

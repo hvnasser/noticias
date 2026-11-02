@@ -64,14 +64,14 @@ def test_fora_do_tema(bc, paises):
 
 def test_colunistas_entram_por_busca_ou_autor(bc, paises):
     res = classificar([
-        n("Officials split on December move", "colunistas_bc", fonte="WSJ"),  # busca pelo nome
+        n("Officials split on December move", "colunista_timiraos", fonte="WSJ"),  # busca pelo nome
         n("A armadilha da comunicação", autor="Alex Ribeiro", fonte="Valor Econômico"),  # autor no RSS
-        n("WSJ's Nick Timiraos on what to expect", "colunistas_bc", fonte="MarketWatch"),  # outro site: não
+        n("WSJ's Nick Timiraos on what to expect", "colunista_timiraos", fonte="MarketWatch"),  # outro site: não
         n("Outra coluna sem relação", autor="Fulano"),
     ], [bc], paises)[0]
     assert secoes(res) == {
-        "Officials split on December move": "Alex Ribeiro e Nick Timiraos",
-        "A armadilha da comunicação": "Alex Ribeiro e Nick Timiraos",
+        "Officials split on December move": "Fed",                     # Timiraos -> seção do Fed
+        "A armadilha da comunicação": "Banco Central do Brasil",       # Alex Ribeiro -> seção do BCB
     }
     # Só o autor confirmado entra direto; o que veio da busca pelo nome a IA confere
     assert {m.noticia.titulo: m.garantida for m in res.noticias} == {
@@ -80,7 +80,7 @@ def test_colunistas_entram_por_busca_ou_autor(bc, paises):
 
 def test_ia_nao_tira_colunista_do_tema(bc, paises):
     res = classificar([n("A armadilha da comunicação", autor="Alex Ribeiro", fonte="Valor Econômico"),
-                       n("Talarico rejects left-right politics", "colunistas_bc", fonte="WSJ"),
+                       n("Talarico rejects left-right politics", "colunista_timiraos", fonte="WSJ"),
                        n("Fed's Waller backs a December rate cut", "mundo")], [bc], paises)
     ia = FakeIA([ecoa("relevante", False), ecoa("resumo", "r")])
     resumir_temas(res, ConfigIA(tarefas={"relevancia": Tarefa("m"), "resumo": Tarefa("m")}), ia)
@@ -106,7 +106,7 @@ def test_pagina_de_autor_vira_noticias_com_autor():
       <a href="https://valor.globo.com/financas/noticia/2026/10/20/velha.ghtml">Matéria antiga de outubro sobre juros</a>
       <a href="https://valor.globo.com/opiniao/">Opinião</a>
     </body></html>"""
-    feed = Feed("Valor Econômico", "colunistas_bc", "https://valor.globo.com/opiniao/alex-ribeiro/",
+    feed = Feed("Valor Econômico", "colunista_alex", "https://valor.globo.com/opiniao/alex-ribeiro/",
                 tipo="pagina", autor="Alex Ribeiro")
     agora = datetime(2026, 11, 2, 18, tzinfo=timezone.utc)
     r = buscar_noticias(Config([feed]), agora, baixar_fn=lambda url, t: html.encode())
@@ -115,11 +115,27 @@ def test_pagina_de_autor_vira_noticias_com_autor():
 
 
 def test_busca_pelo_nome_e_conferida_mesmo_com_resumo_gravado(bc, paises):
-    res = classificar([n("Talarico rejects left-right politics", "colunistas_bc", fonte="WSJ"),
-                       n("Fed officials split on December cut", "colunistas_bc", fonte="WSJ")], [bc], paises)
+    res = classificar([n("Talarico rejects left-right politics", "colunista_timiraos", fonte="WSJ"),
+                       n("Fed officials split on December cut", "colunista_timiraos", fonte="WSJ")], [bc], paises)
     for m in res[0].noticias:
         m.resumo_ia = "resumo já gravado"
     assert [m.so_busca for m in res[0].noticias] == [True, False]  # a 2ª também casa com "Fed"
     ia = FakeIA([ecoa("relevante", False)])
     resumir_temas(res, ConfigIA(tarefas={"relevancia": Tarefa("m"), "resumo": Tarefa("m")}), ia)
     assert [m.noticia.titulo for m in res[0].noticias] == ["Fed officials split on December cut"]
+
+
+def test_martin_wolf_vai_para_a_secao_do_assunto(bc, paises):
+    from n8news.busca import Config, Feed, buscar_noticias
+    from datetime import datetime, timezone
+    rss = """<?xml version="1.0"?><rss version="2.0"><channel><title>Martin Wolf</title>
+      <item><title>The Bank of England must not repeat its mistakes</title><link>https://www.ft.com/content/a</link>
+        <pubDate>Mon, 02 Nov 2026 10:00:00 GMT</pubDate></item>
+      <item><title>Britain cannot build its future by returning to the 1970s</title><link>https://www.ft.com/content/b</link>
+        <pubDate>Mon, 02 Nov 2026 09:00:00 GMT</pubDate></item>
+    </channel></rss>"""
+    feed = Feed("Financial Times", "colunista_wolf", "https://www.ft.com/martin-wolf?format=rss", autor="Martin Wolf")
+    r = buscar_noticias(Config([feed]), datetime(2026, 11, 2, 18, tzinfo=timezone.utc), baixar_fn=lambda u, t: rss.encode())
+    assert {x.autor for x in r.noticias} == {"Martin Wolf"}
+    res = classificar(r.noticias, [bc], paises)[0]
+    assert secoes(res) == {"The Bank of England must not repeat its mistakes": "Banco da Inglaterra"}

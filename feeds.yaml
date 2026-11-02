@@ -156,9 +156,11 @@ feeds:
   # Nick Timiraos: o WSJ não tem página de autor aberta; busca pelo nome no Google
   # News (só vale o que vem do WSJ, e a IA confere se é do tema, porque a busca às
   # vezes traz outras matérias do WSJ). "site:wsj.com" junto devolve o WSJ inteiro.
-  - { fonte: Google News, categoria: colunistas_bc, url: "https://news.google.com/rss/search?q=%22Nick+Timiraos%22+when%3A2d&hl=en-US&gl=US&ceid=US:en" }
+  - { fonte: Google News, categoria: colunista_timiraos, url: "https://news.google.com/rss/search?q=%22Nick+Timiraos%22+when%3A2d&hl=en-US&gl=US&ceid=US:en" }
   # Alex Ribeiro: página de autor no Valor (só o que ele assina, link direto)
-  - { fonte: Valor Econômico, categoria: colunistas_bc, tipo: pagina, autor: Alex Ribeiro, url: "https://valor.globo.com/opiniao/alex-ribeiro/" }
+  - { fonte: Valor Econômico, categoria: colunista_alex, tipo: pagina, autor: Alex Ribeiro, url: "https://valor.globo.com/opiniao/alex-ribeiro/" }
+  # Martin Wolf: colunas no FT (entram na seção do banco central de que tratam)
+  - { fonte: Financial Times, categoria: colunista_wolf, autor: Martin Wolf, url: "https://www.ft.com/martin-wolf?format=rss" }
 
   # ---------- Tecnologia ----------
   - { fonte: G1 Tecnologia, categoria: tecnologia, url: "https://g1.globo.com/rss/g1/tecnologia/" }
