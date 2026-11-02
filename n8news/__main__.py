@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .artigo import baixar_textos
-from .banco import Supabase, alinhar_com_banco, id_match, mapa_links, reaproveitar, versoes_gravadas
+from .banco import Supabase, alinhar_com_banco, id_match, id_noticia, mapa_links, reaproveitar, versoes_gravadas
 from .busca import buscar_noticias, carregar_config
 from .envio import enviar_gmail, montar_email, selecionar_novas
 from .painel import gerar_painel
@@ -125,6 +125,13 @@ def processar_temas(por_tema, args, timeout, janela_horas=24):
         avisos += resumir_temas(por_tema, carregar_config_ia(args.temas))
 
     if banco:
+        try:
+            for res in por_tema:
+                fora = [n.id_versao or id_noticia(n.link) for n, motivo in res.excluidas if motivo == "IA: fora do tema"]
+                if fora:
+                    banco.tirar_do_tema(res.tema.id, fora)
+        except Exception as e:  # noqa: BLE001
+            avisos.append(f"Supabase: erro ao tirar notícias do tema ({e})")
         try:
             print(f"Banco: {banco.salvar(por_tema)} notícias gravadas")
         except Exception as e:  # noqa: BLE001

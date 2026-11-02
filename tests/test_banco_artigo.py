@@ -185,3 +185,9 @@ def test_mesma_historia_com_outro_principal_nao_duplica():
     Supabase("https://abc.supabase.co", "k", enviar=http).salvar(resultado(m1, m2, m3))
     ids = [l["id"] for l in http.chamadas[0][2]]
     assert ids == [id_noticia("https://valor.com/a"), "id_azul", id_noticia("https://g1.com/nova")]
+
+
+def test_tirar_do_tema():
+    http = FakeHTTP()
+    Supabase("https://abc.supabase.co", "k", enviar=http).tirar_do_tema("bancos_centrais", ["a", "b"])
+    assert http.chamadas[0][:2] == ("DELETE", "/noticias_temas?tema=eq.bancos_centrais&noticia_id=in.(a,b)")
