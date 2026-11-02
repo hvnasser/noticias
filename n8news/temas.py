@@ -96,7 +96,7 @@ class Match:
     relevante: bool = True  # a IA pode marcar como fora do tema
     regiao: str = "mundo"   # "brasil" ou "mundo"
     id_banco: str = ""      # id já gravado no Supabase para esta história (se diferente do link)
-    garantida: bool = False  # entrou por autor/busca dedicada: a IA não tira do tema
+    garantida: bool = False  # autor confirmado (ex: colunista): a IA não tira do tema
 
 
 @dataclass
@@ -266,6 +266,9 @@ def classificar(noticias: list[Noticia], temas: list[Tema], paises: list[Pais] |
             citados = [p.codigo for p in detectar(paises, texto)]
             regiao = regiao_da_noticia(n.titulo, citados)
             diretos = [(f.nome, p) for f in tema.filtros if (p := f.casa_direto(n))]
+            # Autor confirmado (assinatura no feed/página) entra sempre; vindo só de
+            # uma busca pelo nome, a IA ainda confere se é do tema
+            confirmada = any(p.startswith("autor:") for _, p in diretos)
             casados = diretos + [(f.nome, p) for f in tema.filtros
                                  if f.nome not in {d[0] for d in diretos}
                                  and (not f.regiao or f.regiao == regiao) and (p := f.casa(texto))]
@@ -282,7 +285,7 @@ def classificar(noticias: list[Noticia], temas: list[Tema], paises: list[Pais] |
                 res.excluidas.append((n, "país fora da lista: " + ", ".join(citados)))
                 continue
             res.noticias.append(Match(n, [c[0] for c in casados], [c[1] for c in casados],
-                                      paises=citados, regiao=regiao, garantida=bool(diretos)))
+                                      paises=citados, regiao=regiao, garantida=confirmada))
         res.noticias = agrupar_parecidas(res.noticias, tema.radicais_genericos(), prioridade)
         resultados.append(res)
     return resultados

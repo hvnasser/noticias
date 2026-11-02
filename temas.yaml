@@ -387,7 +387,7 @@ temas:
       - credit card*
 
     filtros:
-      - nome: "Colunistas: Alex Ribeiro e Nick Timiraos"
+      - nome: "Alex Ribeiro e Nick Timiraos"
         separar_brasil: false
         feeds: [colunistas_bc]           # buscas pelos nomes (feeds.yaml)
         autores: [Alex Ribeiro, Nick Timiraos]

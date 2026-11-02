@@ -70,18 +70,22 @@ def test_colunistas_entram_por_busca_ou_autor(bc, paises):
         n("Outra coluna sem relação", autor="Fulano"),
     ], [bc], paises)[0]
     assert secoes(res) == {
-        "Officials split on December move": "Colunistas: Alex Ribeiro e Nick Timiraos",
-        "A armadilha da comunicação": "Colunistas: Alex Ribeiro e Nick Timiraos",
+        "Officials split on December move": "Alex Ribeiro e Nick Timiraos",
+        "A armadilha da comunicação": "Alex Ribeiro e Nick Timiraos",
     }
-    assert all(m.garantida for m in res.noticias)
+    # Só o autor confirmado entra direto; o que veio da busca pelo nome a IA confere
+    assert {m.noticia.titulo: m.garantida for m in res.noticias} == {
+        "Officials split on December move": False, "A armadilha da comunicação": True}
 
 
 def test_ia_nao_tira_colunista_do_tema(bc, paises):
-    res = classificar([n("Officials split on December move", "colunistas_bc", fonte="WSJ"),
+    res = classificar([n("A armadilha da comunicação", autor="Alex Ribeiro", fonte="Valor Econômico"),
+                       n("Talarico rejects left-right politics", "colunistas_bc", fonte="WSJ"),
                        n("Fed's Waller backs a December rate cut", "mundo")], [bc], paises)
     ia = FakeIA([ecoa("relevante", False), ecoa("resumo", "r")])
     resumir_temas(res, ConfigIA(tarefas={"relevancia": Tarefa("m"), "resumo": Tarefa("m")}), ia)
-    assert [m.noticia.titulo for m in res[0].noticias] == ["Officials split on December move"]
+    # A IA disse "fora do tema" para todas: só fica o colunista confirmado
+    assert [m.noticia.titulo for m in res[0].noticias] == ["A armadilha da comunicação"]
     # a IA recebe a descrição do tema
     entrada = json.loads(ia.chamadas[0]["usuario"])
     assert entrada["tema"] == "Bancos centrais" and "Copom" in entrada["descricao"]
@@ -91,3 +95,20 @@ def test_possessivo_ingles_separa_palavra():
     assert normalizar("BoE's Bailey") == " boe s bailey "
     assert normalizar("People’s Bank") == " people s bank "
     assert normalizar("d'água") == " dagua "
+
+
+def test_pagina_de_autor_vira_noticias_com_autor():
+    from datetime import datetime, timezone
+    from n8news.busca import Config, Feed, buscar_noticias
+    html = """<html><body>
+      <a href="https://valor.globo.com/financas/noticia/2026/11/02/analise-copom-teste.ghtml"><h2>Análise: Copom enfrenta teste como única âncora</h2></a>
+      <a href="https://valor.globo.com/financas/noticia/2026/11/02/analise-copom-teste.ghtml">Análise: Copom enfrenta teste como única âncora</a>
+      <a href="https://valor.globo.com/financas/noticia/2026/10/20/velha.ghtml">Matéria antiga de outubro sobre juros</a>
+      <a href="https://valor.globo.com/opiniao/">Opinião</a>
+    </body></html>"""
+    feed = Feed("Valor Econômico", "colunistas_bc", "https://valor.globo.com/opiniao/alex-ribeiro/",
+                tipo="pagina", autor="Alex Ribeiro")
+    agora = datetime(2026, 11, 2, 18, tzinfo=timezone.utc)
+    r = buscar_noticias(Config([feed]), agora, baixar_fn=lambda url, t: html.encode())
+    assert [(n.titulo, n.autor) for n in r.noticias] == [("Análise: Copom enfrenta teste como única âncora", "Alex Ribeiro")]
+    assert r.noticias[0].publicado_em == datetime(2026, 11, 2, 15, tzinfo=timezone.utc)
