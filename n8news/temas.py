@@ -27,8 +27,12 @@ from .texto import compilar, normalizar, primeira
 @dataclass
 class Filtro:
     nome: str
-    palavras: list[str]
+    palavras: list[str] = field(default_factory=list)
     exige: list[str] = field(default_factory=list)
+    exceto: list[str] = field(default_factory=list)  # se aparecer, o filtro não pega a notícia
+    autores: list[str] = field(default_factory=list)  # pega tudo que essas pessoas assinam
+    feeds: list[str] = field(default_factory=list)    # pega tudo que vem dessas categorias do feeds.yaml
+    fontes: list[str] = field(default_factory=list)   # com autores/feeds: só vale para estes jornais
     ativo: bool = True
     regiao: str | None = None      # "brasil" ou "mundo": só pega notícias dessa região
     separar_brasil: bool = True    # no e-mail, divide o filtro em Brasil / Mundo
@@ -36,13 +40,28 @@ class Filtro:
     def __post_init__(self):
         self._palavras = compilar(self.palavras)
         self._exige = compilar(self.exige)
+        self._exceto = compilar(self.exceto)
+        self._autores = compilar(self.autores)
+        self._fontes = compilar(self.fontes)
 
     def casa(self, texto_norm: str) -> str | None:
         """Retorna a palavra que fez a notícia passar, ou None."""
         achada = primeira(self._palavras, texto_norm)
         if achada and self._exige and not primeira(self._exige, texto_norm):
             return None
+        if achada and self._exceto and primeira(self._exceto, texto_norm):
+            return None
         return achada
+
+    def casa_direto(self, n: Noticia) -> str | None:
+        """Pega a notícia pelo autor ou pela busca de onde veio (sem olhar palavras)."""
+        if self._fontes and not any(primeira(self._fontes, normalizar(f)) for f in [n.fonte] + n.fontes):
+            return None
+        if self.feeds and set(n.categorias or [n.categoria]) & set(self.feeds):
+            return f"busca: {n.categoria}"
+        if self._autores and n.autor and (a := primeira(self._autores, normalizar(n.autor))):
+            return f"autor: {a}"
+        return None
 
 
 @dataclass
@@ -50,6 +69,7 @@ class Tema:
     id: str
     nome: str
     filtros: list[Filtro]
+    descricao: str = ""  # o que entra no tema (vai para a IA de relevância e resumo)
     categorias: list[str] = field(default_factory=list)  # vazio = todas
     excluir: list[str] = field(default_factory=list)
     paises_permitidos: list[str] = field(default_factory=list)  # grupos (g10, em) ou códigos; vazio = todos
@@ -76,6 +96,8 @@ class Match:
     relevante: bool = True  # a IA pode marcar como fora do tema
     regiao: str = "mundo"   # "brasil" ou "mundo"
     id_banco: str = ""      # id já gravado no Supabase para esta história (se diferente do link)
+    garantida: bool = False  # autor confirmado (ex: colunista): a IA não tira do tema
+    so_busca: bool = False   # entrou só pela busca pelo nome: a IA sempre confere
 
 
 @dataclass
@@ -208,7 +230,8 @@ def agrupar_parecidas(matches: list[Match], genericas: set[str] = frozenset(),
         brasil = sum(m.regiao == "brasil" for m in membros)
         regiao = "brasil" if brasil * 2 >= len(membros) else "mundo"
         prio = prioridade or Prioridade()
-        ordem = lambda m: (-prio.posicao(m.noticia, regiao), _qualidade(m.noticia))
+        # Matéria que entrou por autor/busca dedicada (ex: colunista) fica como principal
+        ordem = lambda m: (m.garantida, -prio.posicao(m.noticia, regiao), _qualidade(m.noticia))
         membros = sorted(membros, key=ordem, reverse=True)  # "também em" na mesma ordem
         principal = membros[0]
         for outro in membros:
@@ -216,6 +239,7 @@ def agrupar_parecidas(matches: list[Match], genericas: set[str] = frozenset(),
                 continue
             principal.relacionadas.append(outro.noticia)
             principal.paises += [c for c in outro.paises if c not in principal.paises]
+            principal.garantida = principal.garantida or outro.garantida
             for f, p in zip(outro.filtros, outro.palavras):
                 if f not in principal.filtros:
                     principal.filtros.append(f)
@@ -242,10 +266,18 @@ def classificar(noticias: list[Noticia], temas: list[Tema], paises: list[Pais] |
             texto = normalizar(f"{n.titulo} {n.resumo}")
             citados = [p.codigo for p in detectar(paises, texto)]
             regiao = regiao_da_noticia(n.titulo, citados)
-            casados = [(f.nome, p) for f in tema.filtros
-                       if (not f.regiao or f.regiao == regiao) and (p := f.casa(texto))]
+            diretos = [(f.nome, p) for f in tema.filtros if (p := f.casa_direto(n))]
+            # Autor confirmado (assinatura no feed/página) entra sempre; vindo só de
+            # uma busca pelo nome, a IA ainda confere se é do tema
+            confirmada = any(p.startswith("autor:") for _, p in diretos)
+            casados = diretos + [(f.nome, p) for f in tema.filtros
+                                 if f.nome not in {d[0] for d in diretos}
+                                 and (not f.regiao or f.regiao == regiao) and (p := f.casa(texto))]
             if not casados:
                 continue
+            # Seção: a primeira na ordem do temas.yaml
+            ordem = [f.nome for f in tema.filtros]
+            casados.sort(key=lambda c: ordem.index(c[0]))
             if bloqueio := primeira(tema._excluir, texto):
                 res.excluidas.append((n, bloqueio))
                 continue
@@ -254,7 +286,10 @@ def classificar(noticias: list[Noticia], temas: list[Tema], paises: list[Pais] |
                 res.excluidas.append((n, "país fora da lista: " + ", ".join(citados)))
                 continue
             res.noticias.append(Match(n, [c[0] for c in casados], [c[1] for c in casados],
-                                      paises=citados, regiao=regiao))
+                                      paises=citados, regiao=regiao, garantida=confirmada,
+                                      so_busca=bool(diretos) and not confirmada and not any(
+                                          (not f.regiao or f.regiao == regiao) and f.casa(texto)
+                                          for f in tema.filtros)))
         res.noticias = agrupar_parecidas(res.noticias, tema.radicais_genericos(), prioridade)
         resultados.append(res)
     return resultados

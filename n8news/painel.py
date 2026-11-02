@@ -65,9 +65,13 @@ def montar_dados(temas: list[Tema], atuais: list[ResultadoTema], historico: list
     agora = agora or datetime.now(timezone.utc)
     itens: dict[tuple[str, str], dict] = {}
 
+    # Filtros que existem hoje em cada tema: notícia antiga de filtro apagado ou
+    # renomeado (ou de tema que saiu) não aparece mais no painel
+    validos = {t.id: {f.nome for f in t.filtros} for t in temas}
     for linha in historico:
         n = linha.get("noticias") or {}
-        if not n.get("titulo"):
+        filtros = linha.get("filtros") or []
+        if not n.get("titulo") or not filtros or filtros[0] not in validos.get(linha.get("tema"), set()):
             continue
         outros = [{"fonte": o.get("fonte", ""), "link": o.get("link", "")} for o in n.get("outros_links") or []]
         itens[(n["id"], linha["tema"])] = _item(
@@ -294,6 +298,12 @@ select { padding: 7px 8px; border: 1px solid var(--borda); border-radius: 8px; b
 .grupo-botoes button + button { border-left: 1px solid var(--borda); }
 .grupo-botoes button[aria-pressed=true] { background: var(--destaque); color: var(--link); font-weight: 600; }
 label.check { display: inline-flex; align-items: center; gap: 6px; color: var(--suave); font-size: 14px; }
+.abas { display: flex; gap: 2px; margin-top: 10px; border-bottom: 1px solid var(--borda); overflow-x: auto; }
+.abas button { border: 0; background: none; color: var(--suave); font: inherit; font-size: 15px; padding: 8px 12px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; white-space: nowrap; }
+.abas button:hover { color: var(--texto); }
+.abas button[aria-selected=true] { color: var(--link); border-bottom-color: var(--link); font-weight: 600; }
+.abas .conta { font-size: 13px; }
 .secoes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .secoes a { font-size: 12px; text-decoration: none; color: var(--texto); background: var(--chip);
   padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
@@ -332,15 +342,15 @@ footer { color: var(--suave); font-size: 12px; text-align: center; padding: 20px
     <a class="botao" id="atualizar" target="_blank" rel="noopener" hidden
        title="Abre o GitHub: clique em Run workflow. O painel atualiza em 2 a 3 minutos.">Atualizar agora ↗</a>
   </div>
+  <nav class="abas" id="abas" role="tablist" aria-label="Temas"></nav>
   <div class="controles">
-    <input type="search" id="busca" placeholder="Buscar (ex: Ri Happy, debêntures, França)" aria-label="Buscar">
+    <input type="search" id="busca" placeholder="Buscar (ex: Ri Happy, Copom, França)" aria-label="Buscar">
     <select id="periodo" aria-label="Período">
       <option value="24">Últimas 24h</option>
       <option value="48">Últimas 48h</option>
       <option value="168">Últimos 7 dias</option>
       <option value="720">Últimos 30 dias</option>
     </select>
-    <select id="tema" aria-label="Tema"></select>
     <span class="grupo-botoes" role="group" aria-label="Região">
       <button type="button" data-regiao="" aria-pressed="true">Todas</button>
       <button type="button" data-regiao="brasil" aria-pressed="false">Brasil</button>
@@ -365,7 +375,11 @@ footer { color: var(--suave); font-size: 12px; text-align: center; padding: 20px
   try { ultimaVisita = localStorage.getItem(CHAVE); localStorage.setItem(CHAVE, new Date().toISOString()); } catch (e) {}
   var corteNovas = ultimaVisita ? new Date(ultimaVisita) : null;
 
-  var estado = { busca: "", horas: 24, tema: "", regiao: "", soNovas: false };
+  // Aba aberta: a última usada neste navegador, ou o primeiro tema
+  var CHAVE_ABA = "noticias.aba", aba = null;
+  try { aba = localStorage.getItem(CHAVE_ABA); } catch (e) {}
+  var ids = D.temas.map(function (t) { return t.id; });
+  var estado = { busca: "", horas: 24, tema: ids.indexOf(aba) >= 0 ? aba : (ids[0] || ""), regiao: "", soNovas: false };
   var el = function (id) { return document.getElementById(id); };
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -375,19 +389,14 @@ footer { color: var(--suave); font-size: 12px; text-align: center; padding: 20px
   function ehNova(i) { return corteNovas && i.coletado && new Date(i.coletado) > corteNovas; }
   function ancora(s) { return "s-" + semAcento(s).replace(/[^a-z0-9]+/g, "-"); }
 
-  // Seletor de tema (só aparece se houver mais de um)
-  var selTema = el("tema");
-  selTema.innerHTML = '<option value="">Todos os temas</option>' +
-    D.temas.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.nome) + "</option>"; }).join("");
-  if (D.temas.length < 2) selTema.style.display = "none";
 
   el("sub").textContent = "Atualizado em " + fmtLongo.format(new Date(D.atualizado)) +
     (ultimaVisita ? " · sua última visita: " + fmtLongo.format(new Date(ultimaVisita)) : "");
 
+  // Notícias que passam nos filtros (busca, período, região...), de todos os temas
   function filtradas() {
     var agora = Date.now(), termos = semAcento(estado.busca).split(/\s+/).filter(Boolean);
     return D.noticias.filter(function (i) {
-      if (estado.tema && i.tema !== estado.tema) return false;
       if (estado.regiao && i.regiao !== estado.regiao) return false;
       if (agora - quando(i).getTime() > estado.horas * 3600e3) return false;
       if (estado.soNovas && !ehNova(i)) return false;
@@ -423,13 +432,31 @@ footer { color: var(--suave); font-size: 12px; text-align: center; padding: 20px
       }).join("") + "</ul></details>";
   }
 
+  function abas(lista) {
+    var nav = el("abas");
+    if (D.temas.length < 2) { nav.hidden = true; return; }
+    nav.innerHTML = D.temas.map(function (t) {
+      var n = lista.filter(function (i) { return i.tema === t.id; }).length;
+      return '<button type="button" role="tab" data-aba="' + esc(t.id) + '" aria-selected="' + (t.id === estado.tema) + '">' +
+        esc(t.nome) + ' <span class="conta">(' + n + ")</span></button>";
+    }).join("");
+    Array.prototype.forEach.call(nav.querySelectorAll("[data-aba]"), function (b) {
+      b.addEventListener("click", function () {
+        estado.tema = b.getAttribute("data-aba");
+        try { localStorage.setItem(CHAVE_ABA, estado.tema); } catch (e) {}
+        render();
+        window.scrollTo(0, 0);
+      });
+    });
+  }
+
   function render() {
     var lista = filtradas(), html = [], nav = [];
+    abas(lista);
     D.temas.forEach(function (t) {
       if (estado.tema && t.id !== estado.tema) return;
       var doTema = lista.filter(function (i) { return i.tema === t.id; });
       if (!doTema.length) return;
-      if (D.temas.length > 1) html.push("<h2>" + esc(t.nome) + ' <span class="conta">(' + doTema.length + ")</span></h2>");
       var conhecidos = t.filtros.map(function (f) { return f.nome; });
       var filtros = t.filtros.concat([{ nome: "Outras", separar: true }]);
       filtros.forEach(function (f) {
@@ -457,7 +484,6 @@ footer { color: var(--suave); font-size: 12px; text-align: center; padding: 20px
 
   el("busca").addEventListener("input", function (e) { estado.busca = e.target.value; render(); });
   el("periodo").addEventListener("change", function (e) { estado.horas = +e.target.value; render(); });
-  selTema.addEventListener("change", function (e) { estado.tema = e.target.value; render(); });
   el("sonovas").addEventListener("change", function (e) { estado.soNovas = e.target.checked; render(); });
   Array.prototype.forEach.call(document.querySelectorAll("[data-regiao]"), function (b) {
     b.addEventListener("click", function () {

@@ -133,6 +133,13 @@ class Supabase:
                                          "noticias": len(ids), "destinatarios": destinatarios}, headers)
 
     # ------------------------------------------------------------ escrita
+    def tirar_do_tema(self, tema: str, ids: list[str]) -> None:
+        """A IA disse que não é do tema: a notícia sai do tema no banco (se estava)."""
+        headers = self._headers({"Prefer": "return=minimal"})
+        for i in range(0, len(ids), LOTE):
+            lote = ",".join(ids[i : i + LOTE])
+            self._enviar("DELETE", f"/noticias_temas?tema=eq.{tema}&noticia_id=in.({lote})", None, headers)
+
     def _upsert(self, tabela: str, conflito: str, linhas: list[dict]) -> None:
         headers = self._headers({"Prefer": "resolution=merge-duplicates,return=minimal"})
         for i in range(0, len(linhas), LOTE):

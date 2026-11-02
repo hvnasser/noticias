@@ -24,6 +24,16 @@
 #   categorias: só procura em notícias dessas categorias do feeds.yaml
 #               (deixe vazio [] para procurar em todas)
 #   excluir:    notícia com qualquer uma destas palavras sai do tema
+#   descricao:  o que entra no tema, em poucas linhas (a IA usa para decidir
+#               se a notícia é do tema e para escrever o resumo)
+#
+# Mais opções do filtro:
+#   exceto:  se uma destas aparecer, o filtro não pega a notícia
+#   autores: pega tudo que essas pessoas assinam (quando o feed informa o autor);
+#            a IA não tira essas notícias do tema
+#   feeds:   pega o que vem dessas categorias do feeds.yaml (ex: uma busca pelo
+#            nome de um colunista); a IA confere se é mesmo do tema
+#   fontes:  junto com autores/feeds, só aceita notícias destes jornais
 
 # Notícia que saiu em vários sites: qual link vira o principal.
 # A ordem vale conforme a região da notícia (Brasil ou Mundo); jornais fora da
@@ -67,6 +77,13 @@ ia:
 temas:
   - id: credito
     nome: Crédito
+    descricao: >-
+      Crédito corporativo e soberano no Brasil e nas principais economias:
+      spreads, ratings, default/calote, recuperação judicial e extrajudicial,
+      renegociação de dívida e captações de empresas brasileiras (debêntures,
+      bonds, notas comerciais). Fica fora: dívida de pessoa física, finanças
+      pessoais, recomendação de ações e política sem efeito concreto sobre a
+      dívida de empresas ou governos.
     categorias: [credito, economia, mercado, mundo, brasil]
     # Países aceitos: grupos do paises.yaml (g10, em) e/ou códigos (ex: VEN).
     # Notícia que cita SÓ países fora daqui (ex: Gana, Sri Lanka) sai do tema.
@@ -352,3 +369,136 @@ temas:
           - Clube de Paris
           - Paris Club
           - Common Framework
+
+  - id: bancos_centrais
+    nome: Bancos centrais
+    descricao: >-
+      Política monetária e bancos centrais: Banco Central do Brasil (Copom,
+      Selic, diretoria), Fed, BCE, Banco da Inglaterra, Banco do Japão e Banco
+      do Povo da China. Decisões de juros, sinalizações, atas, discursos,
+      nomeações, balanço e intervenções no câmbio. Fica fora: bancos centrais de
+      outros países, finanças pessoais (hipoteca, poupança, cartão) e cotações
+      de mercado sem relação com decisão ou sinalização de banco central.
+    categorias: [bancos_centrais, colunista_alex, colunista_timiraos, colunista_wolf, economia, mercado, mundo, brasil]
+    excluir:
+      - mortgage rate*
+      - savings
+      - APY
+      - CD rates
+      - credit card*
+
+    filtros:
+      - nome: Banco Central do Brasil
+        regiao: brasil
+        separar_brasil: false
+        autores: [Alex Ribeiro]    # tudo que ele assina no Valor entra aqui
+        fontes: [Valor]
+        palavras:
+          - Banco Central
+          - Banco Central do Brasil
+          - BC
+          - BCB
+          - Copom
+          - Selic
+          - Galípolo
+          - política monetária
+          - ata do Copom
+        exceto:   # outro banco central citado em português
+          - banco central europeu
+          - banco central americano
+          - banco central norte-americano
+          - banco central dos EUA
+          - banco central japonês
+          - banco central do Japão
+          - banco central britânico
+          - banco central da Inglaterra
+          - banco central chinês
+          - banco central da China
+          - banco central argentino
+          - banco central da Argentina
+
+      - nome: Fed
+        separar_brasil: false
+        feeds: [colunista_timiraos]   # busca pelo nome; a IA confere se é do tema
+        fontes: [WSJ, Wall Street Journal]
+        palavras:
+          - Federal Reserve
+          - FOMC
+          - Fed
+          - Warsh          # Kevin Warsh, presidente do Fed
+          - Powell
+          - banco central americano
+          - banco central norte-americano
+          - banco central dos EUA
+        exceto:   # "fed" no sentido comum do inglês
+          - fed up
+          - well fed
+          - fed into
+          - being fed
+          - grass fed
+        exige:    # e exige assunto de política monetária
+          - juro*
+          - taxa*
+          - rate*
+          - inflation
+          - inflação
+          - monetár*
+          - monetary
+          - Powell
+          - Warsh
+          - FOMC
+          - Federal Reserve
+          - chair*
+          - presiden*
+          - minutes
+          - ata
+          - decis*
+          - corte*
+          - cut*
+          - hike*
+          - yield*
+          - Treasur*
+          - balance sheet
+          - balanço
+          - payroll*
+          - emprego*
+          - jobs
+
+      - nome: BCE
+        separar_brasil: false
+        palavras:
+          - BCE
+          - ECB
+          - European Central Bank
+          - Banco Central Europeu
+          - Lagarde
+
+      - nome: Banco da Inglaterra
+        separar_brasil: false
+        palavras:
+          - Bank of England
+          - BoE
+          - Banco da Inglaterra
+          - banco central britânico
+          - banco central do Reino Unido
+          - Andrew Bailey
+
+      - nome: Banco do Japão
+        separar_brasil: false
+        palavras:
+          - Bank of Japan
+          - BoJ
+          - Banco do Japão
+          - banco central japonês
+          - Kazuo Ueda
+          - Ueda
+
+      - nome: Banco do Povo da China
+        separar_brasil: false
+        palavras:
+          - People's Bank of China
+          - PBOC
+          - Banco do Povo da China
+          - banco central chinês
+          - banco central da China
+          - Pan Gongsheng

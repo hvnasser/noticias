@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import calendar
 import html
+from html.parser import HTMLParser
 import re
+import time
 import unicodedata
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -32,6 +34,8 @@ class Feed:
     categoria: str
     url: str
     ativo: bool = True
+    tipo: str = "rss"   # "rss" ou "pagina" (página de autor de um jornal, ex: Valor)
+    autor: str = ""     # quem assina tudo o que vem deste feed (ex: página de colunista)
 
 
 @dataclass
@@ -98,6 +102,50 @@ def baixar(url: str, timeout: float) -> bytes:
         return resp.read()
 
 
+class _Links(HTMLParser):
+    """Junta (link, texto) de cada <a> da página."""
+
+    def __init__(self):
+        super().__init__()
+        self.links: list[tuple[str, str]] = []
+        self._href, self._texto = None, []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self._href, self._texto = dict(attrs).get("href"), []
+
+    def handle_data(self, data):
+        if self._href is not None:
+            self._texto.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self._href:
+            self.links.append((self._href, " ".join(" ".join(self._texto).split())))
+            self._href = None
+
+
+_LINK_COM_DATA = re.compile(r"^https?://[^ ]+/noticia/(\d{4})/(\d{2})/(\d{2})/")
+
+
+def ler_pagina(conteudo: bytes | str, autor: str = "") -> list[dict]:
+    """Página de autor (ex: valor.globo.com/opiniao/alex-ribeiro/): cada link de
+    matéria com data no endereço vira uma entrada. Hora desconhecida: meio-dia
+    de Brasília do dia da matéria."""
+    html = conteudo.decode("utf-8", "replace") if isinstance(conteudo, bytes) else conteudo
+    leitor = _Links()
+    leitor.feed(html)
+    entradas, vistos = [], set()
+    for href, texto in leitor.links:
+        m = _LINK_COM_DATA.match(href or "")
+        if not m or len(texto) < 20 or href in vistos:
+            continue
+        vistos.add(href)
+        ano, mes, dia = map(int, m.groups())
+        entradas.append({"title": texto, "link": href, "author": autor,
+                         "published_parsed": time.struct_time((ano, mes, dia, 15, 0, 0, 0, 0, 0))})
+    return entradas
+
+
 def ler_feed(feed: Feed, timeout: float, baixar_fn=baixar):
     """Retorna (entradas, erro). Nunca levanta exceção: um feed quebrado não
     pode derrubar a busca inteira."""
@@ -105,6 +153,9 @@ def ler_feed(feed: Feed, timeout: float, baixar_fn=baixar):
         conteudo = baixar_fn(feed.url, timeout)
     except Exception as e:  # noqa: BLE001
         return [], f"{type(e).__name__}: {e}"
+    if feed.tipo == "pagina":
+        entradas = ler_pagina(conteudo, feed.autor)
+        return entradas, "" if entradas else "nenhuma matéria encontrada na página"
     parsed = feedparser.parse(conteudo)
     if not parsed.entries and (parsed.bozo or not parsed.version):
         motivo = parsed.get("bozo_exception") or "o endereço não retornou um RSS/Atom"
@@ -212,6 +263,8 @@ def buscar_noticias(config: Config, agora: datetime | None = None, baixar_fn=bai
                 continue  # ex: conteúdo patrocinado
 
             data = data_da_entrada(entrada)
+            if data and data > agora:
+                data = agora  # data no futuro (ex: página com só o dia): vale agora
             if data and (agora - data).total_seconds() > limite_segundos:
                 continue  # notícia antiga (sem data: mantém)
 
@@ -237,6 +290,8 @@ def buscar_noticias(config: Config, agora: datetime | None = None, baixar_fn=bai
                     existente.fontes.append(fonte)
                 if not existente.resumo:
                     existente.resumo = resumo
+                if not existente.autor and (autor := limpar_texto(entrada.get("author")) or feed.autor):
+                    existente.autor = autor
                 continue
 
             n = Noticia(
@@ -249,7 +304,7 @@ def buscar_noticias(config: Config, agora: datetime | None = None, baixar_fn=bai
                 fontes=[fonte],
                 categorias=[feed.categoria],
                 imagem=imagem_da_entrada(entrada),
-                autor=limpar_texto(entrada.get("author")),
+                autor=limpar_texto(entrada.get("author")) or feed.autor,
             )
             por_link[k_link] = n
             por_titulo[k_titulo] = n

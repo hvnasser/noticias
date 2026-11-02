@@ -25,17 +25,18 @@ import yaml
 from .ia import ErroCredencial, ErroIA, criar_cliente
 from .temas import ResultadoTema
 
-CONTEXTO = """Você ajuda a montar um e-mail diário de notícias lido por um \
-profissional de mercado de crédito (crédito corporativo e soberano, Brasil e \
-principais economias). Você recebe o nome de um tema e uma lista de notícias \
-(id, título, fontes e, quando existe, um trecho do texto)."""
+CONTEXTO = """Você ajuda a montar um painel diário de notícias lido por um \
+profissional do mercado financeiro (Brasil e principais economias). Você recebe \
+um tema (nome e descrição do que entra nele) e uma lista de notícias (id, \
+título, fontes e, quando existe, um trecho do texto)."""
 
 SISTEMA_RELEVANCIA = CONTEXTO + """
 
 Para cada notícia, responda:
-- relevante: true se trata do tema; false se a palavra-chave apareceu por acaso \
-(sentido figurado, finanças pessoais, recomendação de investimento, política sem \
-efeito concreto sobre dívida de empresas ou governos, assunto sem relação).
+- relevante: true se trata do tema, conforme a descrição do tema; false se a \
+palavra-chave apareceu por acaso (sentido figurado, finanças pessoais, \
+recomendação de investimento, assunto sem relação ou o que a descrição \
+disser que fica fora).
 - opiniao: true se é artigo de opinião, coluna, editorial ou análise assinada \
 (não reportagem). Pistas: "opinião", "coluna", "editorial", "Opinion |", \
 "/opiniao/" ou "/colunas/" no link, texto em primeira pessoa com argumentação.
@@ -49,8 +50,7 @@ SISTEMA_RESUMO = CONTEXTO + """
 
 Para cada notícia, escreva o campo resumo: 1 a 2 frases em português do Brasil, \
 no máximo 280 caracteres. Diga o fato principal com os detalhes relevantes para \
-crédito que estiverem no texto (quem, valor, instrumento, prazo, credores, rating, \
-país). Use só a informação recebida: não invente números, datas nem \
+o tema que estiverem no texto (quem, valores, decisões, números, prazos, país). Use só a informação recebida: não invente números, datas nem \
 desdobramentos. Se só houver o título, escreva uma frase clara a partir dele, sem \
 acrescentar fatos. Notícias em inglês também são resumidas em português. Não \
 comece com "A notícia" ou "O artigo".
@@ -150,7 +150,7 @@ def _com_opiniao(resumo: str, autor: str) -> str:
     return f"{rotulo}: {resumo}"
 
 
-def _entrada(tema: str, lote) -> str:
+def _entrada(tema, lote) -> str:
     noticias = []
     for i, m in enumerate(lote):
         n = m.noticia
@@ -161,23 +161,24 @@ def _entrada(tema: str, lote) -> str:
         if "news.google.com" not in n.link:
             item["link"] = n.link
         noticias.append(item)
-    return json.dumps({"tema": tema, "noticias": noticias}, ensure_ascii=False)
+    cab = {"tema": tema.nome, "descricao": tema.descricao} if hasattr(tema, "nome") else {"tema": tema}
+    return json.dumps({**cab, "noticias": noticias}, ensure_ascii=False)
 
 
-def _rodar(cliente, tarefa: Tarefa, sistema: str, schema: dict, campo: str, tema_nome: str,
+def _rodar(cliente, tarefa: Tarefa, sistema: str, schema: dict, campo: str, tema,
            noticias: list, tamanho: int, avisos: list[str], nome_tarefa: str):
     """Chama o modelo em lotes e devolve {match: valor}."""
     valores = {}
     for inicio in range(0, len(noticias), tamanho):
         lote = noticias[inicio : inicio + tamanho]
         try:
-            dados = cliente.json(modelo=tarefa.modelo, sistema=sistema, usuario=_entrada(tema_nome, lote),
+            dados = cliente.json(modelo=tarefa.modelo, sistema=sistema, usuario=_entrada(tema, lote),
                                  schema=schema, esforco=tarefa.esforco)
             itens = dados["itens"]
         except ErroCredencial:
             raise
         except (ErroIA, KeyError, TypeError) as e:
-            avisos.append(f"{tema_nome} / {nome_tarefa} ({tarefa.modelo}): {e}")
+            avisos.append(f"{getattr(tema, 'nome', tema)} / {nome_tarefa} ({tarefa.modelo}): {e}")
             continue
         for item in itens:
             i = item.get("id") if isinstance(item, dict) else None
@@ -188,7 +189,7 @@ def _rodar(cliente, tarefa: Tarefa, sistema: str, schema: dict, campo: str, tema
 
 def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) -> list[str]:
     """Aplica relevância e resumo. Devolve avisos (vazio = tudo ok)."""
-    pendentes_total = sum(1 for r in resultados for m in r.noticias if not m.resumo_ia)
+    pendentes_total = sum(1 for r in resultados for m in r.noticias if not m.resumo_ia or m.so_busca)
     if not pendentes_total:
         return []
     if not any(cfg.tarefa(n).ativo for n in ("relevancia", "resumo")):
@@ -205,16 +206,20 @@ def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) 
         for res in resultados:
             nome = res.tema.nome
             pendentes = [m for m in res.noticias if not m.resumo_ia]  # já resumidas: reaproveita
+            # Entrou só pela busca pelo nome (sem palavra-chave nem autor confirmado):
+            # a IA sempre confere, mesmo se o resumo já estava gravado
+            conferir = pendentes + [m for m in res.noticias if m.resumo_ia and m.so_busca]
 
             relev = cfg.tarefa("relevancia", res.tema)
             opiniao: dict[int, str] = {}  # id(match) -> autor
-            if relev.ativo and pendentes:
+            if relev.ativo and conferir:
                 vals = _rodar(cliente, relev, SISTEMA_RELEVANCIA, SCHEMA_RELEVANCIA, "relevante",
-                              nome, pendentes, cfg.max_por_chamada, avisos, "relevância")
-                for m in pendentes:
+                              res.tema, conferir, cfg.max_por_chamada, avisos, "relevância")
+                for m in conferir:
                     item = vals.get(id(m))
                     if item:
-                        m.relevante = bool(item["relevante"])
+                        # Colunista/busca dedicada: entra sempre, mesmo se a IA discordar
+                        m.relevante = bool(item["relevante"]) or m.garantida
                         if item.get("opiniao"):
                             opiniao[id(m)] = str(item.get("autor") or m.noticia.autor or "").strip()
                 if cfg.remover_irrelevantes:
@@ -232,7 +237,7 @@ def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) 
             resumo = cfg.tarefa("resumo", res.tema)
             if resumo.ativo and com_texto:
                 vals = _rodar(cliente, resumo, SISTEMA_RESUMO, SCHEMA_RESUMO, "resumo",
-                              nome, com_texto, cfg.max_por_chamada, avisos, "resumo")
+                              res.tema, com_texto, cfg.max_por_chamada, avisos, "resumo")
                 for m in com_texto:
                     if id(m) in vals:
                         m.resumo_ia = str(vals[id(m)]["resumo"]).strip()

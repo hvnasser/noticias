@@ -10,6 +10,7 @@ def normalizar(texto: str) -> str:
     """Minúsculas, sem acentos/apóstrofos/pontuação, com espaço nas pontas."""
     texto = unicodedata.normalize("NFD", texto.lower())
     texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    texto = re.sub(r"['’`´]s\b", " s", texto)  # possessivo inglês: "BoE's" -> "boe s"
     texto = re.sub(r"['’`´]", "", texto)
     texto = re.sub(r"[^a-z0-9*]+", " ", texto)
     return f" {texto.strip()} "

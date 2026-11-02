@@ -19,6 +19,10 @@ painel no GitHub Pages (o envio por e-mail continua disponível).
       fonte, horário (Brasília) e resumo.
 - [x] **5. Agendado** 3x ao dia (06:53, 12:53 e 18:53, Brasília): o Supabase dispara a busca no GitHub (veja *Agendamento*);
       o agendamento do próprio GitHub fica como reserva.
+- [x] **7. Tema Bancos centrais**: BCB, Fed, BCE, Banco da Inglaterra,
+      Banco do Japão e Banco do Povo da China. Colunistas: Alex Ribeiro
+      (Valor) na seção do BCB, Nick Timiraos (WSJ) na do Fed e Martin Wolf
+      (FT) na seção do assunto. Cada tema é uma aba no painel.
 - [x] **6. Painel no GitHub Pages**: página com as notícias dos últimos 30
       dias, busca, período, Brasil/Mundo e "só novas desde a última visita".
       O e-mail fica desligado (dá para religar, veja abaixo).
@@ -86,6 +90,21 @@ de um site que está ficando de fora, adicione o nome dele nessa lista.
 Brasil: Valor, Estadão, O Globo/G1, Folha, depois os demais.
 Mundo: WSJ, FT, Reuters, Bloomberg, depois os demais.
 Os outros sites aparecem em "também em", na mesma ordem.
+
+**Abas:** cada tema do `temas.yaml` vira uma aba no painel (o painel lembra a
+última aba aberta). Para criar um tema novo, copie um bloco `- id: ...` no
+`temas.yaml`, com `descricao` (a IA usa para decidir o que é do tema) e
+filtros.
+
+Colunistas (`feeds.yaml` + `temas.yaml`):
+- **Página/RSS do autor** (melhor: só o que a pessoa assina). Feed com
+  `autor: Nome` (ex: Alex Ribeiro no Valor, `tipo: pagina`; Martin Wolf no FT,
+  RSS). No filtro, `autores: [Nome]` coloca tudo dele numa seção e a IA não
+  tira; sem isso, as colunas entram na seção do assunto pelas palavras-chave.
+- **Busca pelo nome** no Google News (quando o jornal não tem página aberta,
+  ex: Nick Timiraos no WSJ): filtro com `feeds: [categoria]` e `fontes:
+  [jornal]`; a IA confere se é do tema, porque a busca às vezes traz outras
+  matérias do jornal.
 
 ## Países
 
