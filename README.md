@@ -193,7 +193,8 @@ Localmente: `python -m n8news --painel site` e abra `site/index.html`.
 
 O agendamento do próprio GitHub atrasa ou pula horários. Por isso o relógio
 principal é o Supabase: 3x ao dia (Brasília 06:53, 12:53 e 18:53) ele pede ao GitHub para rodar a busca. O agendamento do GitHub
-continua como reserva e é pulado se já houve busca há menos de 90 minutos.
+continua como reserva, 30 minutos depois (07:23, 13:23 e 19:23), e só busca se
+o Supabase não tiver rodado com sucesso desde o último horário dele.
 
 Para ligar (uma vez):
 
