@@ -111,3 +111,70 @@ def test_junta_mesmo_conteudo_com_link_pela_prioridade():
     assert len(ia.chamadas) == 1
     assert {n["titulo"] for n in ia.chamadas[0]["noticias"]} == set(ia.grupos)
     assert set(ia.chamadas[0]["noticias"][0]) == {"id", "titulo", "fontes"}
+
+
+def test_memoria_evita_chamar_a_ia_de_novo(tmp_path):
+    from n8news.memoria import Memoria
+    from n8news.resumo import juntar_mesmo_conteudo
+    arquivo = tmp_path / "m.json"
+    cfg = ConfigIA(tarefas={"secundarias": Tarefa("x"), "agrupar": Tarefa("x")})
+
+    def busca():  # as mesmas matérias voltam a cada busca
+        return [ResultadoTema(TEMA, [
+            m("Copom deve manter Selic em 13,75%", "Folha"),
+            m("Copom deve interromper cortes da Selic", "Valor Econômico"),
+            m("Mercado aposta em manutenção da Selic", "CNN Brasil"),   # secundária: repete
+            m("BC divulga dados de crédito", "Money Times"),            # secundária: distinta
+        ])]
+
+    class IA:
+        def __init__(self):
+            self.chamadas = 0
+
+        def json(self, **kw):
+            self.chamadas += 1
+            e = json.loads(kw["usuario"])
+            if "candidatas" in e:
+                tab = {"Mercado aposta em manutenção da Selic": "repete", "BC divulga dados de crédito": "distinta"}
+                return {"itens": [{"id": c["id"], "veredito": tab[c["titulo"]]} for c in e["candidatas"]]}
+            return {"itens": [{"id": n["id"], "grupo": 1 if n["titulo"].startswith("Copom") else 2}
+                              for n in e["noticias"]]}
+
+    def rodar(ia):
+        mem = Memoria(arquivo)
+        res = busca()
+        filtrar_secundarias(res, cfg, PRIO, ia, memoria=mem)
+        juntar_mesmo_conteudo(res, cfg, PRIO, ia, memoria=mem)
+        mem.salvar()
+        return res
+
+    ia1 = IA()
+    r1 = rodar(ia1)
+    assert ia1.chamadas == 2  # uma do filtro, uma da junção
+    ia2 = IA()
+    r2 = rodar(ia2)
+    assert ia2.chamadas == 0  # nada novo: vale o que foi decidido antes
+    for r in (r1, r2):
+        assert [x.noticia.titulo for x in r[0].noticias] == ["Copom deve interromper cortes da Selic",
+                                                             "BC divulga dados de crédito"]
+        assert [n.fonte for n in r[0].noticias[0].relacionadas] == ["Folha"]
+
+    # Uma matéria nova na seção: a IA é chamada de novo (só a junção; a nova é principal)
+    mem = Memoria(arquivo)
+    res = busca()
+    res[0].noticias.append(m("Galípolo fala sobre inflação", "Estadão"))
+    ia3 = IA()
+    filtrar_secundarias(res, cfg, PRIO, ia3, memoria=mem)
+    juntar_mesmo_conteudo(res, cfg, PRIO, ia3, memoria=mem)
+    assert ia3.chamadas == 1
+
+
+def test_memoria_esquece_depois_de_7_dias(tmp_path):
+    from datetime import datetime, timedelta, timezone
+    from n8news.memoria import Memoria
+    agora = datetime(2026, 11, 4, tzinfo=timezone.utc)
+    mem = Memoria(tmp_path / "m.json", agora=agora - timedelta(days=8))
+    mem.guardar_veredito("bc", "https://x/a", "repete")
+    mem.salvar()
+    assert Memoria(tmp_path / "m.json", agora=agora - timedelta(days=1)).veredito("bc", "https://x/a") == "repete"
+    assert Memoria(tmp_path / "m.json", agora=agora).veredito("bc", "https://x/a") is None

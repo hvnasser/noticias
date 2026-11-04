@@ -68,6 +68,13 @@ jobs:
       - run: pip install -r requirements.txt pytest
       - name: Testes
         run: python -m pytest -q
+      # Memória das decisões da IA pelos títulos (filtro de secundárias e junção
+      # por conteúdo), para não pagar de novo pelas mesmas matérias
+      - uses: actions/cache@v4
+        with:
+          path: .memoria
+          key: memoria-${{ github.run_id }}
+          restore-keys: memoria-
       - name: Buscar notícias e gerar o painel
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -82,7 +89,10 @@ jobs:
           # Variables (e os secrets do Gmail). Só envia nos horários agendados
           # ou rodando manualmente, nunca a cada mudança no código.
           ENVIAR: ${{ vars.ENVIAR_EMAIL == 'true' && github.event_name != 'push' && '--enviar-email' || '' }}
-        run: python -m n8news --json noticias.json --painel site --salvar-email email.html $ENVIAR
+          # Teste de mudança no código (push fora do branch principal): sem IA e sem
+          # gravar no banco. A busca completa fica para os horários e o "Atualizar agora".
+          TESTE: ${{ github.event_name == 'push' && github.ref_name != github.event.repository.default_branch && '--sem-resumo --sem-banco' || '' }}
+        run: python -m n8news --json noticias.json --painel site --salvar-email email.html --memoria .memoria/decisoes.json $ENVIAR $TESTE
       - uses: actions/upload-artifact@v4
         with:
           name: noticias

@@ -57,6 +57,18 @@ comece com "A notícia" ou "O artigo".
 
 Devolva um item para cada notícia recebida, com o mesmo id."""
 
+SISTEMA_JUNTO = SISTEMA_RELEVANCIA.replace(
+    "Devolva um item para cada notícia recebida, com o mesmo id.", "") + """\
+- resumo: se relevante for true e houver trecho, 1 a 2 frases em português do \
+Brasil, no máximo 280 caracteres, com o fato principal e os detalhes relevantes \
+para o tema que estiverem no texto (quem, valores, decisões, números, prazos, \
+país). Use só a informação recebida: não invente números, datas nem \
+desdobramentos. Notícias em inglês também são resumidas em português. Não \
+comece com "A notícia" ou "O artigo". Se relevante for false ou não houver \
+trecho, deixe vazio.
+
+Devolva um item para cada notícia recebida, com o mesmo id."""
+
 
 def _schema(campo: str, tipo: str) -> dict:
     return {
@@ -99,6 +111,28 @@ SCHEMA_RELEVANCIA = {
     "additionalProperties": False,
 }
 SCHEMA_RESUMO = _schema("resumo", "string")
+SCHEMA_JUNTO = {
+    "type": "object",
+    "properties": {
+        "itens": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "relevante": {"type": "boolean"},
+                    "opiniao": {"type": "boolean"},
+                    "autor": {"type": "string"},
+                    "resumo": {"type": "string"},
+                },
+                "required": ["id", "relevante", "opiniao", "autor", "resumo"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["itens"],
+    "additionalProperties": False,
+}
 SCHEMA_SECUNDARIAS = _schema("veredito", "string")
 
 SISTEMA_SECUNDARIAS = CONTEXTO + """
@@ -155,7 +189,7 @@ TAREFAS_PADRAO = {
     "relevancia": Tarefa("anthropic/claude-haiku-5.5", esforco="low"),
     "secundarias": Tarefa("anthropic/claude-haiku-5.5", esforco="low"),
     "agrupar": Tarefa("anthropic/claude-haiku-5.5", esforco="low"),
-    "resumo": Tarefa("anthropic/claude-opus-5.5", esforco="medium"),
+    "resumo": Tarefa("anthropic/claude-opus-5.5", esforco="low"),
 }
 
 
@@ -256,28 +290,53 @@ def _secundarias_lote(cliente, tarefa: Tarefa, res: ResultadoTema, secao: str, p
 
 
 def filtrar_secundarias(resultados: list[ResultadoTema], cfg: ConfigIA, prioridade, cliente=None,
-                        baixar_textos=None) -> list[str]:
+                        baixar_textos=None, memoria=None) -> list[str]:
     """Por seção de cada tema: notícias de fontes secundárias (fora da
     prioridade dos jornais) só ficam se trouxerem assunto bem distinto das
     fontes principais (ou, sem principal, se não repetirem outra secundária).
     1ª etapa só pelo título; na dúvida, baixa o texto (`baixar_textos`) e a IA
-    decide de novo. Continuou na dúvida: sai. Devolve avisos."""
+    decide de novo. Continuou na dúvida: sai.
+    Com `memoria`, cada matéria é avaliada uma vez só: nas buscas seguintes
+    vale o veredito guardado, e a IA só é chamada para matérias novas.
+    Devolve avisos."""
     def principal(m) -> bool:
         return any(prioridade.principal(n) for n in [m.noticia] + m.relacionadas)
 
+    def tirar(res, fora: set[int]) -> None:
+        if fora:
+            res.excluidas += [(m.noticia, "IA: repete as fontes principais") for m in res.noticias if id(m) in fora]
+            res.noticias = [m for m in res.noticias if id(m) not in fora]
+
     trabalhos = []
     for res in resultados:
+        if not cfg.tarefa("secundarias", res.tema).ativo:
+            continue
         secoes: dict[str, list] = {}
         for m in res.noticias:
             secoes.setdefault(m.filtros[0] if m.filtros else "", []).append(m)
+        ja_repetidas: set[int] = set()
         for secao, lista in secoes.items():
             principais = [m for m in lista if principal(m)]
-            candidatas = [m for m in lista if not principal(m) and not m.garantida]
-            if candidatas and (principais or len(candidatas) >= 2):
-                trabalhos.append((res, secao, principais, candidatas))
+            novas, aceitas = [], []
+            for m in lista:
+                if principal(m) or m.garantida:
+                    continue
+                v = memoria.veredito(res.tema.id, m.noticia.link) if memoria else None
+                if v == "repete":
+                    ja_repetidas.add(id(m))
+                elif v == "distinta":
+                    aceitas.append(m)
+                else:
+                    novas.append(m)
+            # As já aceitas entram como referência (já estão no painel)
+            referencia = principais + aceitas
+            if novas and (referencia or len(novas) >= 2):
+                trabalhos.append((res, secao, referencia, novas))
+            elif novas and memoria:  # sozinha na seção: fica
+                for m in novas:
+                    memoria.guardar_veredito(res.tema.id, m.noticia.link, "distinta")
+        tirar(res, ja_repetidas)
     if not trabalhos:
-        return []
-    if not any(cfg.tarefa("secundarias", r.tema).ativo for r, *_ in trabalhos):
         return []
     if cliente is None:
         try:
@@ -289,47 +348,86 @@ def filtrar_secundarias(resultados: list[ResultadoTema], cfg: ConfigIA, priorida
     try:
         for res, secao, principais, candidatas in trabalhos:
             tarefa = cfg.tarefa("secundarias", res.tema)
-            if not tarefa.ativo:
-                continue
             fora: set[int] = set()
             for inicio in range(0, len(candidatas), cfg.max_por_chamada):
                 lote = candidatas[inicio : inicio + cfg.max_por_chamada]
                 try:
                     v1 = _secundarias_lote(cliente, tarefa, res, secao, principais, lote, com_texto=False)
-                    duvida = [m for i, m in enumerate(lote) if v1.get(i) == "duvida"]
-                    fora |= {id(m) for i, m in enumerate(lote) if v1.get(i) == "repete"}
+                    vereditos = {i: v for i, v in v1.items() if v != "duvida"}
+                    duvida = [(i, m) for i, m in enumerate(lote) if v1.get(i) == "duvida"]
                     if duvida:
                         if baixar_textos:
-                            baixar_textos([m.noticia for m in duvida])
-                        v2 = _secundarias_lote(cliente, tarefa, res, secao, principais, duvida, com_texto=True)
-                        fora |= {id(m) for i, m in enumerate(duvida) if v2.get(i) != "distinta"}
+                            baixar_textos([m.noticia for _, m in duvida])
+                        v2 = _secundarias_lote(cliente, tarefa, res, secao, principais,
+                                               [m for _, m in duvida], com_texto=True)
+                        for k, (i, _) in enumerate(duvida):
+                            vereditos[i] = "distinta" if v2.get(k) == "distinta" else "repete"
                 except ErroCredencial:
                     raise
                 except (ErroIA, KeyError, TypeError) as e:
                     avisos.append(f"{res.tema.nome} / fontes secundárias ({tarefa.modelo}): {e}")
-            if fora:
-                res.excluidas += [(m.noticia, "IA: repete as fontes principais") for m in res.noticias if id(m) in fora]
-                res.noticias = [m for m in res.noticias if id(m) not in fora]
+                    continue
+                for i, v in vereditos.items():
+                    if v == "repete":
+                        fora.add(id(lote[i]))
+                    if memoria:
+                        memoria.guardar_veredito(res.tema.id, lote[i].noticia.link, v)
+            tirar(res, fora)
     except ErroCredencial as e:
         avisos.append(f"Filtro de fontes secundárias não rodou: {e}")
     return avisos
 
 
-def juntar_mesmo_conteudo(resultados: list[ResultadoTema], cfg: ConfigIA, prioridade, cliente=None) -> list[str]:
+def _juntar_na_lista(res: ResultadoTema, membros: list, prioridade):
+    """Troca os membros pelo cartão juntado, na posição da primeira matéria."""
+    from .temas import juntar_grupo
+    ids = {id(m) for m in membros}
+    principal = juntar_grupo(membros, prioridade)
+    novas = []
+    for m in res.noticias:
+        if id(m) not in ids:
+            novas.append(m)
+        elif principal not in novas:
+            novas.append(principal)
+    res.noticias = novas
+    return principal
+
+
+def _links(m) -> list[str]:
+    return [m.noticia.link] + [r.link for r in m.relacionadas]
+
+
+def juntar_mesmo_conteudo(resultados: list[ResultadoTema], cfg: ConfigIA, prioridade, cliente=None,
+                          memoria=None) -> list[str]:
     """Por seção de cada tema, a IA (só pelos títulos) junta num cartão as
     notícias com o mesmo conteúdo, mesmo de fontes principais. O link principal
     segue a prioridade dos jornais; as outras vão para "também em".
-    Colunistas confirmados não são juntados. Devolve avisos."""
-    from .temas import juntar_grupo
-
+    Colunistas confirmados não são juntados.
+    Com `memoria`: os cartões já feitos antes são refeitos sem IA, e a IA só é
+    chamada numa seção que tenha matéria nova. Devolve avisos."""
     trabalhos = []
     for res in resultados:
+        if not cfg.tarefa("agrupar", res.tema).ativo:
+            continue
+        if memoria:  # refaz os cartões de buscas anteriores, sem IA
+            por_cartao: dict[str, list] = {}
+            for m in res.noticias:
+                c = next((c for l in _links(m) if (c := memoria.cartao(res.tema.id, l))), None)
+                if c and not m.garantida:
+                    por_cartao.setdefault(c, []).append(m)
+            for membros in por_cartao.values():
+                if len(membros) > 1:
+                    _juntar_na_lista(res, membros, prioridade)
         secoes: dict[str, list] = {}
         for m in res.noticias:
             if not m.garantida:
                 secoes.setdefault(m.filtros[0] if m.filtros else "", []).append(m)
-        trabalhos += [(res, s, l) for s, l in secoes.items() if len(l) >= 2]
-    trabalhos = [t for t in trabalhos if cfg.tarefa("agrupar", t[0].tema).ativo]
+        for secao, lista in secoes.items():
+            if len(lista) < 2:
+                continue
+            if memoria and all(memoria.vista(res.tema.id, m.noticia.link) for m in lista):
+                continue  # nada novo na seção desde a última busca
+            trabalhos.append((res, secao, lista))
     if not trabalhos:
         return []
     if cliente is None:
@@ -359,17 +457,11 @@ def juntar_mesmo_conteudo(resultados: list[ResultadoTema], cfg: ConfigIA, priori
             avisos.append(f"{res.tema.nome} / juntar mesmo conteúdo ({tarefa.modelo}): {e}")
             continue
         for membros in grupos.values():
-            if len(membros) < 2:
-                continue
-            ids = {id(m) for m in membros}
-            principal = juntar_grupo(membros, prioridade)
-            novas = []
-            for m in res.noticias:  # o cartão fica na posição da primeira matéria do grupo
-                if id(m) not in ids:
-                    novas.append(m)
-                elif principal not in novas:
-                    novas.append(principal)
-            res.noticias = novas
+            cartao = _juntar_na_lista(res, membros, prioridade) if len(membros) > 1 else membros[0]
+            if memoria:
+                if len(membros) > 1:
+                    memoria.guardar_cartao(res.tema.id, _links(cartao), _links(cartao)[0])
+                memoria.marcar_vistas(res.tema.id, _links(cartao))
     return avisos
 
 
@@ -397,10 +489,17 @@ def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) 
             conferir = pendentes + [m for m in res.noticias if m.resumo_ia and m.so_busca]
 
             relev = cfg.tarefa("relevancia", res.tema)
+            resumo = cfg.tarefa("resumo", res.tema)
             opiniao: dict[int, str] = {}  # id(match) -> autor
+            junto = relev.ativo and resumo.ativo  # uma chamada só: cada notícia vai uma vez
             if relev.ativo and conferir:
-                vals = _rodar(cliente, relev, SISTEMA_RELEVANCIA, SCHEMA_RELEVANCIA, "relevante",
-                              res.tema, conferir, cfg.max_por_chamada, avisos, "relevância")
+                if junto:
+                    vals = _rodar(cliente, resumo, SISTEMA_JUNTO, SCHEMA_JUNTO, "relevante",
+                                  res.tema, conferir, cfg.max_por_chamada, avisos, "relevância e resumo")
+                else:
+                    vals = _rodar(cliente, relev, SISTEMA_RELEVANCIA, SCHEMA_RELEVANCIA, "relevante",
+                                  res.tema, conferir, cfg.max_por_chamada, avisos, "relevância")
+                pend_ids = {id(m) for m in pendentes}
                 for m in conferir:
                     item = vals.get(id(m))
                     if item:
@@ -408,6 +507,9 @@ def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) 
                         m.relevante = bool(item["relevante"]) or m.garantida
                         if item.get("opiniao"):
                             opiniao[id(m)] = str(item.get("autor") or m.noticia.autor or "").strip()
+                        texto_resumo = str(item.get("resumo") or "").strip()
+                        if junto and texto_resumo and id(m) in pend_ids and _trecho(m).strip():
+                            m.resumo_ia = texto_resumo
                 if cfg.remover_irrelevantes:
                     fora = [m for m in res.noticias if not m.relevante]
                     res.noticias = [m for m in res.noticias if m.relevante]
@@ -419,10 +521,11 @@ def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) 
             so_titulo = [m for m in pendentes if not _trecho(m).strip()]
             for m in so_titulo:
                 m.resumo_ia = m.noticia.titulo
-            com_texto = [m for m in pendentes if m not in so_titulo]
+            com_texto = [m for m in pendentes if m not in so_titulo and not m.resumo_ia]
 
-            resumo = cfg.tarefa("resumo", res.tema)
-            if resumo.ativo and com_texto:
+            # Resumo à parte só se a relevância estiver desligada (com as duas ligadas,
+            # o resumo já veio na chamada junta)
+            if resumo.ativo and com_texto and not junto:
                 vals = _rodar(cliente, resumo, SISTEMA_RESUMO, SCHEMA_RESUMO, "resumo",
                               res.tema, com_texto, cfg.max_por_chamada, avisos, "resumo")
                 for m in com_texto:

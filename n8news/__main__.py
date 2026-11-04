@@ -15,6 +15,7 @@ from .artigo import baixar_textos
 from .banco import Supabase, alinhar_com_banco, id_match, id_noticia, mapa_links, reaproveitar, versoes_gravadas
 from .busca import buscar_noticias, carregar_config
 from .envio import enviar_gmail, montar_email, selecionar_novas
+from .memoria import Memoria
 from .painel import gerar_painel
 from .repetidas import remover_datas_antigas, remover_ja_vistas, versoes_novas
 from .paises import carregar_paises
@@ -118,10 +119,11 @@ def processar_temas(por_tema, args, timeout, janela_horas=24):
     if not args.sem_resumo:
         # Fonte fora da prioridade dos jornais só fica com assunto bem distinto das
         # principais: primeiro pelo título; na dúvida, baixa o texto e confere de novo
+        memoria = Memoria(args.memoria)  # decisões de buscas anteriores (sem arquivo: nada guardado)
         antes = {id(r): len(r.noticias) for r in por_tema}
         avisos += filtrar_secundarias(
             por_tema, carregar_config_ia(args.temas), carregar_prioridade(args.temas),
-            baixar_textos=None if args.sem_texto else (lambda ns: baixar_textos(ns, timeout)))
+            baixar_textos=None if args.sem_texto else (lambda ns: baixar_textos(ns, timeout)), memoria=memoria)
         if (n := sum(antes[id(r)] - len(r.noticias) for r in por_tema)):
             print(f"Fontes secundárias: {n} notícias tiradas (assunto já coberto pelas principais)")
             for r in por_tema:
@@ -131,7 +133,11 @@ def processar_temas(por_tema, args, timeout, janela_horas=24):
 
         # Mesmo conteúdo (mesmo de fontes principais) vira um cartão só
         antes = {id(r): len(r.noticias) for r in por_tema}
-        avisos += juntar_mesmo_conteudo(por_tema, carregar_config_ia(args.temas), carregar_prioridade(args.temas))
+        avisos += juntar_mesmo_conteudo(por_tema, carregar_config_ia(args.temas), carregar_prioridade(args.temas),
+                                        memoria=memoria)
+        memoria.salvar()
+        if memoria.reaproveitadas:
+            print(f"Memória: {memoria.reaproveitadas} decisões da IA reaproveitadas de buscas anteriores")
         if (n := sum(antes[id(r)] - len(r.noticias) for r in por_tema)):
             print(f"Mesmo conteúdo: {n} notícias juntadas em outros cartões")
 
@@ -209,6 +215,8 @@ def main(argv=None) -> int:
     p.add_argument("--sem-banco", action="store_true", help="não lê nem grava no Supabase")
     p.add_argument("--painel", metavar="PASTA", help="gera o painel (index.html) nesta pasta")
     p.add_argument("--painel-dias", type=int, default=30, help="dias de histórico no painel (padrão: 30)")
+    p.add_argument("--memoria", metavar="ARQUIVO",
+                   help="guarda as decisões da IA pelos títulos entre buscas (evita repetir chamadas)")
     p.add_argument("--enviar-email", action="store_true", help="envia o e-mail do dia pelo Gmail")
     p.add_argument("--salvar-email", metavar="ARQUIVO", help="salva o HTML do e-mail (para conferir)")
     p.add_argument("--refazer-resumos", action="store_true",

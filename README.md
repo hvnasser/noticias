@@ -104,6 +104,16 @@ prévias do Copom com a mesma expectativa). O link principal segue a
 mesmo evento mas tratam de outra coisa, e colunas, ficam separadas. Liga e
 desliga em `temas.yaml → ia.tarefas.agrupar`.
 
+**Economia de IA:**
+- Relevância e resumo saem numa chamada só (cada notícia vai uma vez para a IA),
+  com raciocínio "low".
+- As decisões feitas pelos títulos (fontes secundárias e junção por conteúdo)
+  ficam guardadas (`--memoria`, no cache do GitHub Actions por 7 dias): cada
+  matéria é avaliada uma vez, os cartões já juntados são refeitos sem IA, e a
+  junção só chama a IA numa seção com matéria nova.
+- Buscas de teste (push fora do branch principal) rodam sem IA e sem gravar no
+  banco. A busca completa fica para os horários agendados e o "Atualizar agora".
+
 **Abas:** cada tema do `temas.yaml` vira uma aba no painel (o painel lembra a
 última aba aberta). Para criar um tema novo, copie um bloco `- id: ...` no
 `temas.yaml`, com `descricao` (a IA usa para decidir o que é do tema) e
