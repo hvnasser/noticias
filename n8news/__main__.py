@@ -18,7 +18,7 @@ from .envio import enviar_gmail, montar_email, selecionar_novas
 from .painel import gerar_painel
 from .repetidas import remover_datas_antigas, remover_ja_vistas, versoes_novas
 from .paises import carregar_paises
-from .resumo import carregar_config_ia, filtrar_secundarias, resumir_temas
+from .resumo import carregar_config_ia, filtrar_secundarias, juntar_mesmo_conteudo, resumir_temas
 from .temas import carregar_prioridade, carregar_temas, classificar
 
 
@@ -129,6 +129,12 @@ def processar_temas(por_tema, args, timeout, janela_horas=24):
                     if motivo == "IA: repete as fontes principais":
                         print(f"  - [{r.tema.nome}] {x.titulo}  ({', '.join(x.fontes)})")
 
+        # Mesmo conteúdo (mesmo de fontes principais) vira um cartão só
+        antes = {id(r): len(r.noticias) for r in por_tema}
+        avisos += juntar_mesmo_conteudo(por_tema, carregar_config_ia(args.temas), carregar_prioridade(args.temas))
+        if (n := sum(antes[id(r)] - len(r.noticias) for r in por_tema)):
+            print(f"Mesmo conteúdo: {n} notícias juntadas em outros cartões")
+
     if not args.sem_texto:
         ok = baixar_textos([m.noticia for res in por_tema for m in res.noticias if not m.resumo_ia], timeout)
         print(f"Texto das matérias: {ok} baixados")
@@ -142,6 +148,11 @@ def processar_temas(por_tema, args, timeout, janela_horas=24):
         try:
             for res in por_tema:
                 fora = [n.id_versao or id_noticia(n.link) for n, motivo in res.excluidas if motivo.startswith("IA:")]
+                # Matérias que viraram "também em" de outro cartão: o registro antigo
+                # delas (de execuções anteriores) sai do tema, para não repetir no painel
+                for m in res.noticias:
+                    fora += [r.id_versao or id_noticia(r.link) for r in m.relacionadas
+                             if (r.id_versao or id_noticia(r.link)) != id_match(m)]
                 if fora:
                     banco.tirar_do_tema(res.tema.id, fora)
         except Exception as e:  # noqa: BLE001

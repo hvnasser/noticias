@@ -73,6 +73,10 @@ ia:
       modelo: deepseek/deepseek-v4.1-flash
       esforco: low
       ativo: true
+    agrupar:                   # junta no mesmo cartão notícias com o mesmo conteúdo (pelo título)
+      modelo: deepseek/deepseek-v4.1-flash
+      esforco: low
+      ativo: true
     resumo:                    # resumo de 1-2 frases em português
       modelo: deepseek/deepseek-v4.1-flash
       esforco: medium

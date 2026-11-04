@@ -187,10 +187,11 @@ def test_prioridade_dos_jornais_no_link_principal():
 
     # Mundo: WSJ > FT > Reuters > Bloomberg > outros
     t = "Treasury yields fall after Fed holds rates steady at 4.5%"
-    grupo = [m("Bloomberg.com", "https://bloomberg.com/a", "mundo", t), m("Reuters", "https://reuters.com/a", "mundo", t),
-             m("Financial Times", "https://ft.com/a", "mundo", t), m("CNBC", "https://cnbc.com/a", "mundo", t)]
-    assert agrupar_parecidas(grupo, prioridade=prio)[0].noticia.fonte == "Financial Times"
-    grupo.append(m("Wall Street Journal", "https://news.google.com/rss/articles/y", "mundo", t))
+    def mundo():
+        return [m("Bloomberg.com", "https://bloomberg.com/a", "mundo", t), m("Reuters", "https://reuters.com/a", "mundo", t),
+                m("Financial Times", "https://ft.com/a", "mundo", t), m("CNBC", "https://cnbc.com/a", "mundo", t)]
+    assert agrupar_parecidas(mundo(), prioridade=prio)[0].noticia.fonte == "Financial Times"
+    grupo = mundo() + [m("Wall Street Journal", "https://news.google.com/rss/articles/y", "mundo", t)]
     principal = agrupar_parecidas(grupo, prioridade=prio)[0]
     assert principal.noticia.fonte == "Wall Street Journal" and len(principal.relacionadas) == 4
 

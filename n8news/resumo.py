@@ -114,6 +114,20 @@ candidata trata do mesmo assunto e parece mais completa (entre candidatas \
 parecidas, só a melhor fica como "distinta");
 - "distinta" só se for um fato ou assunto que nenhuma principal cobre."""
 
+SCHEMA_AGRUPAR = _schema("grupo", "integer")
+
+SISTEMA_AGRUPAR = CONTEXTO + """
+
+Você recebe os títulos das notícias de uma seção do tema. Junte no mesmo grupo \
+as que trazem o MESMO conteúdo: o mesmo fato, anúncio ou decisão, ou a mesma \
+prévia/expectativa sobre o mesmo evento (ex: várias matérias dizendo que o \
+Copom deve manter a Selic). Ficam em grupos diferentes as que só citam o mesmo \
+evento mas tratam de outra coisa (ex: "dólar cai à espera do Copom" é sobre \
+câmbio), as de outro fato do mesmo assunto, e colunas/artigos de opinião \
+(cada um no seu grupo). Na dúvida, grupos diferentes.
+Responda grupo (número inteiro) para cada notícia: mesmo número = mesmo \
+conteúdo. Devolva um item para cada notícia, com o mesmo id."""
+
 PRIMEIRA_ETAPA = """
 Você só tem os títulos. Decida pelo título sempre que der. Use "duvida" apenas \
 quando o título não permitir saber se o assunto é o mesmo (aí o texto da \
@@ -138,6 +152,7 @@ class Tarefa:
 TAREFAS_PADRAO = {
     "relevancia": Tarefa("anthropic/claude-haiku-5.5", esforco="low"),
     "secundarias": Tarefa("anthropic/claude-haiku-5.5", esforco="low"),
+    "agrupar": Tarefa("anthropic/claude-haiku-5.5", esforco="low"),
     "resumo": Tarefa("anthropic/claude-opus-5.5", esforco="medium"),
 }
 
@@ -295,6 +310,64 @@ def filtrar_secundarias(resultados: list[ResultadoTema], cfg: ConfigIA, priorida
                 res.noticias = [m for m in res.noticias if id(m) not in fora]
     except ErroCredencial as e:
         avisos.append(f"Filtro de fontes secundárias não rodou: {e}")
+    return avisos
+
+
+def juntar_mesmo_conteudo(resultados: list[ResultadoTema], cfg: ConfigIA, prioridade, cliente=None) -> list[str]:
+    """Por seção de cada tema, a IA (só pelos títulos) junta num cartão as
+    notícias com o mesmo conteúdo, mesmo de fontes principais. O link principal
+    segue a prioridade dos jornais; as outras vão para "também em".
+    Colunistas confirmados não são juntados. Devolve avisos."""
+    from .temas import juntar_grupo
+
+    trabalhos = []
+    for res in resultados:
+        secoes: dict[str, list] = {}
+        for m in res.noticias:
+            if not m.garantida:
+                secoes.setdefault(m.filtros[0] if m.filtros else "", []).append(m)
+        trabalhos += [(res, s, l) for s, l in secoes.items() if len(l) >= 2]
+    trabalhos = [t for t in trabalhos if cfg.tarefa("agrupar", t[0].tema).ativo]
+    if not trabalhos:
+        return []
+    if cliente is None:
+        try:
+            cliente = criar_cliente(cfg.provedor)
+        except (ErroCredencial, ErroIA) as e:
+            return [f"Junção por conteúdo não rodou: {e}"]
+
+    avisos: list[str] = []
+    for res, secao, lista in trabalhos:
+        tarefa = cfg.tarefa("agrupar", res.tema)
+        lista = lista[:80]
+        entrada = json.dumps({"tema": res.tema.nome, "descricao": res.tema.descricao, "secao": secao,
+                              "noticias": [{"id": i, "titulo": m.noticia.titulo, "fontes": m.noticia.fontes}
+                                           for i, m in enumerate(lista)]}, ensure_ascii=False)
+        try:
+            dados = cliente.json(modelo=tarefa.modelo, sistema=SISTEMA_AGRUPAR, usuario=entrada,
+                                 schema=SCHEMA_AGRUPAR, esforco=tarefa.esforco)
+            grupos: dict[int, list] = {}
+            for it in dados["itens"]:
+                i, g = (it.get("id"), it.get("grupo")) if isinstance(it, dict) else (None, None)
+                if isinstance(i, int) and 0 <= i < len(lista) and isinstance(g, int):
+                    grupos.setdefault(g, []).append(lista[i])
+        except ErroCredencial as e:
+            return avisos + [f"Junção por conteúdo não rodou: {e}"]
+        except (ErroIA, KeyError, TypeError) as e:
+            avisos.append(f"{res.tema.nome} / juntar mesmo conteúdo ({tarefa.modelo}): {e}")
+            continue
+        for membros in grupos.values():
+            if len(membros) < 2:
+                continue
+            ids = {id(m) for m in membros}
+            principal = juntar_grupo(membros, prioridade)
+            novas = []
+            for m in res.noticias:  # o cartão fica na posição da primeira matéria do grupo
+                if id(m) not in ids:
+                    novas.append(m)
+                elif principal not in novas:
+                    novas.append(principal)
+            res.noticias = novas
     return avisos
 
 

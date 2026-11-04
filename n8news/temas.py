@@ -228,28 +228,32 @@ def agrupar_parecidas(matches: list[Match], genericas: set[str] = frozenset(),
         chaves.append(palavras)
         membros.append(m)
 
-    resultado = []
-    for _, membros in grupos:
-        # Região do grupo: a da maioria das matérias (empate = Brasil)
-        brasil = sum(m.regiao == "brasil" for m in membros)
-        regiao = "brasil" if brasil * 2 >= len(membros) else "mundo"
-        prio = prioridade or Prioridade()
-        # Matéria que entrou por autor/busca dedicada (ex: colunista) fica como principal
-        ordem = lambda m: (m.garantida, -prio.posicao(m.noticia, regiao), _qualidade(m.noticia))
-        membros = sorted(membros, key=ordem, reverse=True)  # "também em" na mesma ordem
-        principal = membros[0]
-        for outro in membros:
-            if outro is principal:
-                continue
-            principal.relacionadas.append(outro.noticia)
-            principal.paises += [c for c in outro.paises if c not in principal.paises]
-            principal.garantida = principal.garantida or outro.garantida
-            for f, p in zip(outro.filtros, outro.palavras):
-                if f not in principal.filtros:
-                    principal.filtros.append(f)
-                    principal.palavras.append(p)
-        resultado.append(principal)
-    return resultado
+    return [juntar_grupo(membros, prioridade) for _, membros in grupos]
+
+
+def juntar_grupo(membros: list[Match], prioridade: Prioridade | None = None) -> Match:
+    """Junta matérias sobre o mesmo fato num cartão: o link principal segue a
+    prioridade dos jornais; as outras vão para "também em", na mesma ordem."""
+    if len(membros) == 1:
+        return membros[0]
+    # Região do grupo: a da maioria das matérias (empate = Brasil)
+    brasil = sum(m.regiao == "brasil" for m in membros)
+    regiao = "brasil" if brasil * 2 >= len(membros) else "mundo"
+    prio = prioridade or Prioridade()
+    # Matéria que entrou por autor confirmado (ex: colunista) fica como principal
+    ordem = lambda m: (m.garantida, -prio.posicao(m.noticia, regiao), _qualidade(m.noticia))
+    membros = sorted(membros, key=ordem, reverse=True)  # "também em" na mesma ordem
+    principal = membros[0]
+    for outro in membros[1:]:
+        principal.relacionadas += [outro.noticia] + [r for r in outro.relacionadas if r not in principal.relacionadas]
+        principal.paises += [c for c in outro.paises if c not in principal.paises]
+        principal.garantida = principal.garantida or outro.garantida
+        principal.so_busca = principal.so_busca and outro.so_busca
+        for f, p in zip(outro.filtros, outro.palavras):
+            if f not in principal.filtros:
+                principal.filtros.append(f)
+                principal.palavras.append(p)
+    return principal
 
 
 def carregar_prioridade(caminho: str | Path = "temas.yaml") -> Prioridade:

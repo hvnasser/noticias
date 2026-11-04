@@ -12,7 +12,7 @@ CFG = ConfigIA(tarefas={"secundarias": Tarefa("modelo-barato", esforco="low")})
 
 def m(titulo, fonte, filtro="BCB", resumo="", garantida=False):
     n = Noticia(titulo, "https://x/" + titulo, resumo, fonte, "economia", None, [fonte], ["economia"])
-    return Match(n, [filtro], [""], garantida=garantida)
+    return Match(n, [filtro], [""], garantida=garantida, regiao="brasil" if filtro == "BCB" else "mundo")
 
 
 class IA:
@@ -76,3 +76,38 @@ def test_principal_pelo_grupo_e_erro_da_ia_nao_tira_nada():
             raise ErroIA("fora do ar")
     avisos = filtrar_secundarias(res, CFG, PRIO, Quebrada())
     assert len(res[0].noticias) == 2 and "fontes secundárias" in avisos[0]
+
+
+def test_junta_mesmo_conteudo_com_link_pela_prioridade():
+    from n8news.resumo import juntar_mesmo_conteudo
+
+    class IAGrupos:
+        def __init__(self, grupos):
+            self.grupos, self.chamadas = grupos, []
+
+        def json(self, **kw):
+            entrada = json.loads(kw["usuario"])
+            self.chamadas.append(entrada)
+            return {"itens": [{"id": n["id"], "grupo": self.grupos[n["titulo"]]} for n in entrada["noticias"]]}
+
+    cfg = ConfigIA(tarefas={"agrupar": Tarefa("modelo-barato")})
+    res = [ResultadoTema(TEMA, [
+        m("Copom deve manter Selic em 13,75%", "Folha"),
+        m("Dólar abre em queda à espera do Copom", "Folha"),
+        m("Copom deve interromper cortes da Selic", "Valor Econômico"),
+        m("Selic: por que o BC pode parar de cortar", "G1"),
+        m("Análise: a âncora fiscal", "Valor Econômico", garantida=True),  # colunista: não entra
+        m("Fed holds rates", "Reuters", filtro="Fed"),                       # sozinha na seção
+    ])]
+    ia = IAGrupos({"Copom deve manter Selic em 13,75%": 1, "Copom deve interromper cortes da Selic": 1,
+                   "Selic: por que o BC pode parar de cortar": 1, "Dólar abre em queda à espera do Copom": 2})
+    assert juntar_mesmo_conteudo(res, cfg, PRIO, ia) == []
+    titulos = [x.noticia.titulo for x in res[0].noticias]
+    # Um cartão para as 3 prévias, com o Valor como link principal (prioridade), na posição da 1ª
+    assert titulos == ["Copom deve interromper cortes da Selic", "Dólar abre em queda à espera do Copom",
+                       "Análise: a âncora fiscal", "Fed holds rates"]
+    assert [r.fonte for r in res[0].noticias[0].relacionadas] == ["G1", "Folha"]
+    # Só a seção com 2+ notícias foi para a IA, só com título e fonte, e sem o colunista
+    assert len(ia.chamadas) == 1
+    assert {n["titulo"] for n in ia.chamadas[0]["noticias"]} == set(ia.grupos)
+    assert set(ia.chamadas[0]["noticias"][0]) == {"id", "titulo", "fontes"}

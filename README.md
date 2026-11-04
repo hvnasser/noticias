@@ -97,6 +97,13 @@ ficam notícias com assunto bem distinto do que as fontes principais já cobrem
 só na dúvida o texto da matéria é baixado e lido. Continuou na dúvida, sai. Liga
 e desliga em `temas.yaml → ia.tarefas.secundarias`.
 
+**Mesmo conteúdo, um cartão:** em cada seção, a IA (pelos títulos) junta as
+notícias que trazem o mesmo conteúdo, mesmo de fontes principais (ex: várias
+prévias do Copom com a mesma expectativa). O link principal segue a
+`prioridade_fontes`; as outras ficam em "também em". Matérias que só citam o
+mesmo evento mas tratam de outra coisa, e colunas, ficam separadas. Liga e
+desliga em `temas.yaml → ia.tarefas.agrupar`.
+
 **Abas:** cada tema do `temas.yaml` vira uma aba no painel (o painel lembra a
 última aba aberta). Para criar um tema novo, copie um bloco `- id: ...` no
 `temas.yaml`, com `descricao` (a IA usa para decidir o que é do tema) e
