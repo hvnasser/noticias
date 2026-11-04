@@ -119,12 +119,14 @@ SCHEMA_AGRUPAR = _schema("grupo", "integer")
 SISTEMA_AGRUPAR = CONTEXTO + """
 
 Você recebe os títulos das notícias de uma seção do tema. Junte no mesmo grupo \
-as que trazem o MESMO conteúdo: o mesmo fato, anúncio ou decisão, ou a mesma \
-prévia/expectativa sobre o mesmo evento (ex: várias matérias dizendo que o \
-Copom deve manter a Selic). Ficam em grupos diferentes as que só citam o mesmo \
-evento mas tratam de outra coisa (ex: "dólar cai à espera do Copom" é sobre \
-câmbio), as de outro fato do mesmo assunto, e colunas/artigos de opinião \
-(cada um no seu grupo). Na dúvida, grupos diferentes.
+as que trazem o MESMO conteúdo: o mesmo fato, anúncio ou decisão. Todas as \
+prévias de uma mesma decisão (o que o mercado espera, se está dividido, por que \
+o banco central pode cortar ou manter, projeções de bancos) são o mesmo \
+conteúdo e vão no mesmo grupo, mesmo com ângulos diferentes; o mesmo vale para \
+as repercussões de uma mesma decisão ou declaração. Os resumos do dia do \
+mercado (bolsa, dólar e juros "à espera de" um evento) formam um grupo próprio, \
+separado das prévias. Ficam sozinhos: notícias de outro fato do mesmo assunto, \
+agendas do dia e colunas/artigos de opinião (cada um no seu grupo).
 Responda grupo (número inteiro) para cada notícia: mesmo número = mesmo \
 conteúdo. Devolva um item para cada notícia, com o mesmo id."""
 
