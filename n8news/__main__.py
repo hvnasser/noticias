@@ -18,7 +18,7 @@ from .envio import enviar_gmail, montar_email, selecionar_novas
 from .painel import gerar_painel
 from .repetidas import remover_datas_antigas, remover_ja_vistas, versoes_novas
 from .paises import carregar_paises
-from .resumo import carregar_config_ia, resumir_temas
+from .resumo import carregar_config_ia, filtrar_secundarias, resumir_temas
 from .temas import carregar_prioridade, carregar_temas, classificar
 
 
@@ -115,6 +115,20 @@ def processar_temas(por_tema, args, timeout, janela_horas=24):
             avisos.append(f"Supabase: erro ao ler ({e}); nada será gravado")
             banco = None
 
+    if not args.sem_resumo:
+        # Fonte fora da prioridade dos jornais só fica com assunto bem distinto das
+        # principais: primeiro pelo título; na dúvida, baixa o texto e confere de novo
+        antes = {id(r): len(r.noticias) for r in por_tema}
+        avisos += filtrar_secundarias(
+            por_tema, carregar_config_ia(args.temas), carregar_prioridade(args.temas),
+            baixar_textos=None if args.sem_texto else (lambda ns: baixar_textos(ns, timeout)))
+        if (n := sum(antes[id(r)] - len(r.noticias) for r in por_tema)):
+            print(f"Fontes secundárias: {n} notícias tiradas (assunto já coberto pelas principais)")
+            for r in por_tema:
+                for x, motivo in r.excluidas:
+                    if motivo == "IA: repete as fontes principais":
+                        print(f"  - [{r.tema.nome}] {x.titulo}  ({', '.join(x.fontes)})")
+
     if not args.sem_texto:
         ok = baixar_textos([m.noticia for res in por_tema for m in res.noticias if not m.resumo_ia], timeout)
         print(f"Texto das matérias: {ok} baixados")
@@ -127,7 +141,7 @@ def processar_temas(por_tema, args, timeout, janela_horas=24):
     if banco:
         try:
             for res in por_tema:
-                fora = [n.id_versao or id_noticia(n.link) for n, motivo in res.excluidas if motivo == "IA: fora do tema"]
+                fora = [n.id_versao or id_noticia(n.link) for n, motivo in res.excluidas if motivo.startswith("IA:")]
                 if fora:
                     banco.tirar_do_tema(res.tema.id, fora)
         except Exception as e:  # noqa: BLE001

@@ -99,6 +99,31 @@ SCHEMA_RELEVANCIA = {
     "additionalProperties": False,
 }
 SCHEMA_RESUMO = _schema("resumo", "string")
+SCHEMA_SECUNDARIAS = _schema("veredito", "string")
+
+SISTEMA_SECUNDARIAS = CONTEXTO + """
+
+Numa seção do tema, há notícias de fontes PRINCIPAIS (jornais preferidos) e \
+CANDIDATAS de fontes secundárias. O leitor só quer uma candidata se ela trouxer \
+um assunto bem distinto do que as principais já cobrem. Para cada candidata, \
+responda veredito:
+- "repete" se o fato ou assunto central já aparece em alguma principal, mesmo \
+com outras palavras, outro ângulo ou detalhes extras (ex: mais uma prévia da \
+mesma reunião do Copom, mais uma repercussão da mesma declaração), ou se outra \
+candidata trata do mesmo assunto e parece mais completa (entre candidatas \
+parecidas, só a melhor fica como "distinta");
+- "distinta" só se for um fato ou assunto que nenhuma principal cobre."""
+
+PRIMEIRA_ETAPA = """
+Você só tem os títulos. Decida pelo título sempre que der. Use "duvida" apenas \
+quando o título não permitir saber se o assunto é o mesmo (aí o texto da \
+matéria será lido numa segunda etapa). Devolva um item para cada candidata, com \
+o mesmo id."""
+
+SEGUNDA_ETAPA = """
+Agora você tem também um trecho do texto de cada candidata (e das principais, \
+quando houver). Responda só "distinta" ou "repete"; se ainda houver dúvida, \
+"repete". Devolva um item para cada candidata, com o mesmo id."""
 
 TRECHO_MAX = 3000  # caracteres do texto da matéria enviados por notícia
 
@@ -112,6 +137,7 @@ class Tarefa:
 
 TAREFAS_PADRAO = {
     "relevancia": Tarefa("anthropic/claude-haiku-5.5", esforco="low"),
+    "secundarias": Tarefa("anthropic/claude-haiku-5.5", esforco="low"),
     "resumo": Tarefa("anthropic/claude-opus-5.5", esforco="medium"),
 }
 
@@ -187,6 +213,91 @@ def _rodar(cliente, tarefa: Tarefa, sistema: str, schema: dict, campo: str, tema
     return valores
 
 
+def _secundarias_lote(cliente, tarefa: Tarefa, res: ResultadoTema, secao: str, principais: list,
+                      lote: list, com_texto: bool) -> dict[int, str]:
+    """Uma chamada: {índice da candidata: "distinta" | "repete" | "duvida"}."""
+    def item(m, i=None) -> dict:
+        n = m.noticia
+        d = {"titulo": n.titulo, "fontes": n.fontes}
+        if com_texto:
+            d["trecho"] = _trecho(m)[:1500]
+        return {"id": i, **d} if i is not None else d
+
+    entrada = json.dumps({"tema": res.tema.nome, "descricao": res.tema.descricao, "secao": secao,
+                          "principais": [item(m) for m in principais[:60]],
+                          "candidatas": [item(m, i) for i, m in enumerate(lote)]}, ensure_ascii=False)
+    sistema = SISTEMA_SECUNDARIAS + (SEGUNDA_ETAPA if com_texto else PRIMEIRA_ETAPA)
+    dados = cliente.json(modelo=tarefa.modelo, sistema=sistema, usuario=entrada,
+                         schema=SCHEMA_SECUNDARIAS, esforco=tarefa.esforco)
+    vereditos = {}
+    for it in dados["itens"]:
+        i = it.get("id") if isinstance(it, dict) else None
+        v = str(it.get("veredito", "")).lower() if isinstance(it, dict) else ""
+        if isinstance(i, int) and 0 <= i < len(lote) and v in ("distinta", "repete", "duvida"):
+            vereditos[i] = v
+    return vereditos
+
+
+def filtrar_secundarias(resultados: list[ResultadoTema], cfg: ConfigIA, prioridade, cliente=None,
+                        baixar_textos=None) -> list[str]:
+    """Por seção de cada tema: notícias de fontes secundárias (fora da
+    prioridade dos jornais) só ficam se trouxerem assunto bem distinto das
+    fontes principais (ou, sem principal, se não repetirem outra secundária).
+    1ª etapa só pelo título; na dúvida, baixa o texto (`baixar_textos`) e a IA
+    decide de novo. Continuou na dúvida: sai. Devolve avisos."""
+    def principal(m) -> bool:
+        return any(prioridade.principal(n) for n in [m.noticia] + m.relacionadas)
+
+    trabalhos = []
+    for res in resultados:
+        secoes: dict[str, list] = {}
+        for m in res.noticias:
+            secoes.setdefault(m.filtros[0] if m.filtros else "", []).append(m)
+        for secao, lista in secoes.items():
+            principais = [m for m in lista if principal(m)]
+            candidatas = [m for m in lista if not principal(m) and not m.garantida]
+            if candidatas and (principais or len(candidatas) >= 2):
+                trabalhos.append((res, secao, principais, candidatas))
+    if not trabalhos:
+        return []
+    if not any(cfg.tarefa("secundarias", r.tema).ativo for r, *_ in trabalhos):
+        return []
+    if cliente is None:
+        try:
+            cliente = criar_cliente(cfg.provedor)
+        except (ErroCredencial, ErroIA) as e:
+            return [f"Filtro de fontes secundárias não rodou: {e}"]
+
+    avisos: list[str] = []
+    try:
+        for res, secao, principais, candidatas in trabalhos:
+            tarefa = cfg.tarefa("secundarias", res.tema)
+            if not tarefa.ativo:
+                continue
+            fora: set[int] = set()
+            for inicio in range(0, len(candidatas), cfg.max_por_chamada):
+                lote = candidatas[inicio : inicio + cfg.max_por_chamada]
+                try:
+                    v1 = _secundarias_lote(cliente, tarefa, res, secao, principais, lote, com_texto=False)
+                    duvida = [m for i, m in enumerate(lote) if v1.get(i) == "duvida"]
+                    fora |= {id(m) for i, m in enumerate(lote) if v1.get(i) == "repete"}
+                    if duvida:
+                        if baixar_textos:
+                            baixar_textos([m.noticia for m in duvida])
+                        v2 = _secundarias_lote(cliente, tarefa, res, secao, principais, duvida, com_texto=True)
+                        fora |= {id(m) for i, m in enumerate(duvida) if v2.get(i) != "distinta"}
+                except ErroCredencial:
+                    raise
+                except (ErroIA, KeyError, TypeError) as e:
+                    avisos.append(f"{res.tema.nome} / fontes secundárias ({tarefa.modelo}): {e}")
+            if fora:
+                res.excluidas += [(m.noticia, "IA: repete as fontes principais") for m in res.noticias if id(m) in fora]
+                res.noticias = [m for m in res.noticias if id(m) not in fora]
+    except ErroCredencial as e:
+        avisos.append(f"Filtro de fontes secundárias não rodou: {e}")
+    return avisos
+
+
 def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) -> list[str]:
     """Aplica relevância e resumo. Devolve avisos (vazio = tudo ok)."""
     pendentes_total = sum(1 for r in resultados for m in r.noticias if not m.resumo_ia or m.so_busca)
@@ -227,6 +338,7 @@ def resumir_temas(resultados: list[ResultadoTema], cfg: ConfigIA, cliente=None) 
                     res.noticias = [m for m in res.noticias if m.relevante]
                     res.excluidas += [(m.noticia, "IA: fora do tema") for m in fora]
                     pendentes = [m for m in pendentes if m.relevante]
+
 
             # Só título (sem texto nem trecho): o resumo é o próprio título, sem IA
             so_titulo = [m for m in pendentes if not _trecho(m).strip()]

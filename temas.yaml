@@ -69,6 +69,10 @@ ia:
       modelo: deepseek/deepseek-v4.1-flash
       esforco: low
       ativo: true
+    secundarias:               # fonte fora da prioridade_fontes só entra com assunto bem distinto
+      modelo: deepseek/deepseek-v4.1-flash
+      esforco: low
+      ativo: true
     resumo:                    # resumo de 1-2 frases em português
       modelo: deepseek/deepseek-v4.1-flash
       esforco: medium

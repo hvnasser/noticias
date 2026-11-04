@@ -189,6 +189,10 @@ class Prioridade:
         lista = lambda xs: [[x] if isinstance(x, str) else list(x) for x in xs or []]
         return cls(lista(d.get("brasil")), lista(d.get("mundo")))
 
+    def principal(self, n: Noticia) -> bool:
+        """Jornal de alguma das listas (Brasil ou Mundo) = fonte principal."""
+        return (self.posicao(n, "brasil") < len(self.brasil)) or (self.posicao(n, "mundo") < len(self.mundo))
+
     def posicao(self, n: Noticia, regiao: str) -> int:
         """Posição do jornal da notícia na lista da região (fora da lista = no fim)."""
         lista = self.brasil if regiao == "brasil" else self.mundo
