@@ -91,6 +91,29 @@ Brasil: Valor, Estadão, O Globo/G1, Folha, depois os demais.
 Mundo: WSJ, FT, Reuters, Bloomberg, depois os demais.
 Os outros sites aparecem em "também em", na mesma ordem.
 
+**Fontes secundárias** (jornais fora da `prioridade_fontes`): em cada seção, só
+ficam notícias com assunto bem distinto do que as fontes principais já cobrem
+(e, entre secundárias parecidas, só a melhor). A IA decide primeiro pelo título;
+só na dúvida o texto da matéria é baixado e lido. Continuou na dúvida, sai. Liga
+e desliga em `temas.yaml → ia.tarefas.secundarias`.
+
+**Mesmo conteúdo, um cartão:** em cada seção, a IA (pelos títulos) junta as
+notícias que trazem o mesmo conteúdo, mesmo de fontes principais (ex: várias
+prévias do Copom com a mesma expectativa). O link principal segue a
+`prioridade_fontes`; as outras ficam em "também em". Matérias que só citam o
+mesmo evento mas tratam de outra coisa, e colunas, ficam separadas. Liga e
+desliga em `temas.yaml → ia.tarefas.agrupar`.
+
+**Economia de IA:**
+- Relevância e resumo saem numa chamada só (cada notícia vai uma vez para a IA),
+  com raciocínio "low".
+- As decisões feitas pelos títulos (fontes secundárias e junção por conteúdo)
+  ficam guardadas (`--memoria`, no cache do GitHub Actions por 7 dias): cada
+  matéria é avaliada uma vez, os cartões já juntados são refeitos sem IA, e a
+  junção só chama a IA numa seção com matéria nova.
+- Buscas de teste (push fora do branch principal) rodam sem IA e sem gravar no
+  banco. A busca completa fica para os horários agendados e o "Atualizar agora".
+
 **Abas:** cada tema do `temas.yaml` vira uma aba no painel (o painel lembra a
 última aba aberta). Para criar um tema novo, copie um bloco `- id: ...` no
 `temas.yaml`, com `descricao` (a IA usa para decidir o que é do tema) e

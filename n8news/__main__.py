@@ -15,10 +15,11 @@ from .artigo import baixar_textos
 from .banco import Supabase, alinhar_com_banco, id_match, id_noticia, mapa_links, reaproveitar, versoes_gravadas
 from .busca import buscar_noticias, carregar_config
 from .envio import enviar_gmail, montar_email, selecionar_novas
+from .memoria import Memoria
 from .painel import gerar_painel
 from .repetidas import remover_datas_antigas, remover_ja_vistas, versoes_novas
 from .paises import carregar_paises
-from .resumo import carregar_config_ia, resumir_temas
+from .resumo import carregar_config_ia, filtrar_secundarias, juntar_mesmo_conteudo, resumir_temas
 from .temas import carregar_prioridade, carregar_temas, classificar
 
 
@@ -115,6 +116,31 @@ def processar_temas(por_tema, args, timeout, janela_horas=24):
             avisos.append(f"Supabase: erro ao ler ({e}); nada será gravado")
             banco = None
 
+    if not args.sem_resumo:
+        # Fonte fora da prioridade dos jornais só fica com assunto bem distinto das
+        # principais: primeiro pelo título; na dúvida, baixa o texto e confere de novo
+        memoria = Memoria(args.memoria)  # decisões de buscas anteriores (sem arquivo: nada guardado)
+        antes = {id(r): len(r.noticias) for r in por_tema}
+        avisos += filtrar_secundarias(
+            por_tema, carregar_config_ia(args.temas), carregar_prioridade(args.temas),
+            baixar_textos=None if args.sem_texto else (lambda ns: baixar_textos(ns, timeout)), memoria=memoria)
+        if (n := sum(antes[id(r)] - len(r.noticias) for r in por_tema)):
+            print(f"Fontes secundárias: {n} notícias tiradas (assunto já coberto pelas principais)")
+            for r in por_tema:
+                for x, motivo in r.excluidas:
+                    if motivo == "IA: repete as fontes principais":
+                        print(f"  - [{r.tema.nome}] {x.titulo}  ({', '.join(x.fontes)})")
+
+        # Mesmo conteúdo (mesmo de fontes principais) vira um cartão só
+        antes = {id(r): len(r.noticias) for r in por_tema}
+        avisos += juntar_mesmo_conteudo(por_tema, carregar_config_ia(args.temas), carregar_prioridade(args.temas),
+                                        memoria=memoria)
+        memoria.salvar()
+        if memoria.reaproveitadas:
+            print(f"Memória: {memoria.reaproveitadas} decisões da IA reaproveitadas de buscas anteriores")
+        if (n := sum(antes[id(r)] - len(r.noticias) for r in por_tema)):
+            print(f"Mesmo conteúdo: {n} notícias juntadas em outros cartões")
+
     if not args.sem_texto:
         ok = baixar_textos([m.noticia for res in por_tema for m in res.noticias if not m.resumo_ia], timeout)
         print(f"Texto das matérias: {ok} baixados")
@@ -127,7 +153,12 @@ def processar_temas(por_tema, args, timeout, janela_horas=24):
     if banco:
         try:
             for res in por_tema:
-                fora = [n.id_versao or id_noticia(n.link) for n, motivo in res.excluidas if motivo == "IA: fora do tema"]
+                fora = [n.id_versao or id_noticia(n.link) for n, motivo in res.excluidas if motivo.startswith("IA:")]
+                # Matérias que viraram "também em" de outro cartão: o registro antigo
+                # delas (de execuções anteriores) sai do tema, para não repetir no painel
+                for m in res.noticias:
+                    fora += [r.id_versao or id_noticia(r.link) for r in m.relacionadas
+                             if (r.id_versao or id_noticia(r.link)) != id_match(m)]
                 if fora:
                     banco.tirar_do_tema(res.tema.id, fora)
         except Exception as e:  # noqa: BLE001
@@ -184,6 +215,8 @@ def main(argv=None) -> int:
     p.add_argument("--sem-banco", action="store_true", help="não lê nem grava no Supabase")
     p.add_argument("--painel", metavar="PASTA", help="gera o painel (index.html) nesta pasta")
     p.add_argument("--painel-dias", type=int, default=30, help="dias de histórico no painel (padrão: 30)")
+    p.add_argument("--memoria", metavar="ARQUIVO",
+                   help="guarda as decisões da IA pelos títulos entre buscas (evita repetir chamadas)")
     p.add_argument("--enviar-email", action="store_true", help="envia o e-mail do dia pelo Gmail")
     p.add_argument("--salvar-email", metavar="ARQUIVO", help="salva o HTML do e-mail (para conferir)")
     p.add_argument("--refazer-resumos", action="store_true",

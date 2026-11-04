@@ -65,13 +65,22 @@ ia:
   provedor: openrouter
   remover_irrelevantes: true   # tira do tema o que a IA marcar como fora do tema
   tarefas:
-    relevancia:                # confirma se a notícia é mesmo do tema
+    relevancia:                # confirma se a notícia é mesmo do tema (vai junto com o resumo,
+                               # no modelo do resumo; este modelo só vale com o resumo desligado)
       modelo: deepseek/deepseek-v4.1-flash
       esforco: low
       ativo: true
-    resumo:                    # resumo de 1-2 frases em português
+    secundarias:               # fonte fora da prioridade_fontes só entra com assunto bem distinto
       modelo: deepseek/deepseek-v4.1-flash
-      esforco: medium
+      esforco: low
+      ativo: true
+    agrupar:                   # junta no mesmo cartão notícias com o mesmo conteúdo (pelo título)
+      modelo: deepseek/deepseek-v4.1-flash
+      esforco: low
+      ativo: true
+    resumo:                    # relevância + resumo de 1-2 frases em português (numa chamada só)
+      modelo: deepseek/deepseek-v4.1-flash
+      esforco: low             # raciocínio também é cobrado; para 2 frases, low basta
       ativo: true
 
 temas:
