@@ -17,7 +17,7 @@ painel no GitHub Pages (o envio por e-mail continua disponível).
       resumo, link e tema, para consultar depois.
 - [x] **4. E-mail pelo Gmail**: notícias do dia por tema e filtro, com link,
       fonte, horário (Brasília) e resumo.
-- [x] **5. Agendado** 3x ao dia (06:53, 12:53 e 18:53, Brasília): o Supabase dispara a busca no GitHub (veja *Agendamento*);
+- [x] **5. Agendado** 2x ao dia (06:53 e 15:53, Brasília): o Supabase dispara a busca no GitHub (veja *Agendamento*);
       o agendamento do próprio GitHub fica como reserva.
 - [x] **7. Tema Bancos centrais**: BCB, Fed, BCE, Banco da Inglaterra,
       Banco do Japão e Banco do Povo da China. Colunistas: Alex Ribeiro
@@ -215,8 +215,8 @@ Localmente: `python -m n8news --painel site` e abra `site/index.html`.
 ## Agendamento (Supabase dispara o GitHub)
 
 O agendamento do próprio GitHub atrasa ou pula horários. Por isso o relógio
-principal é o Supabase: 3x ao dia (Brasília 06:53, 12:53 e 18:53) ele pede ao GitHub para rodar a busca. O agendamento do GitHub
-continua como reserva, 30 minutos depois (07:23, 13:23 e 19:23), e só busca se
+principal é o Supabase: 2x ao dia (Brasília 06:53 e 15:53) ele pede ao GitHub para rodar a busca. O agendamento do GitHub
+continua como reserva, 30 minutos depois (07:23 e 16:23), e só busca se
 o Supabase não tiver rodado com sucesso desde o último horário dele.
 
 Para ligar (uma vez):

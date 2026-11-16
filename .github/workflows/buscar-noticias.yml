@@ -3,11 +3,11 @@ name: Buscar notícias
 on:
   workflow_dispatch:
   # O relógio principal é o Supabase (supabase/migracoes/003_agendador.sql),
-  # que dispara este workflow 3x ao dia (Brasília 06:53, 12:53 e 18:53).
-  # Reserva do GitHub: 30 min depois (07:23, 13:23 e 19:23). Só busca se o
+  # que dispara este workflow 2x ao dia (Brasília 06:53 e 15:53).
+  # Reserva do GitHub: 30 min depois (07:23 e 16:23). Só busca se o
   # Supabase não tiver rodado com sucesso desde o último horário dele.
   schedule:
-    - cron: "23 10,16,22 * * *"
+    - cron: "23 10,19 * * *"
   push:
     paths:
       - "n8news/**"
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   verificar:
     # Reserva do GitHub: só busca se não houve busca com sucesso desde o último
-    # horário do Supabase (09:53, 15:53 ou 21:53 UTC)
+    # horário do Supabase (09:53 ou 18:53 UTC)
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -39,9 +39,9 @@ jobs:
           rodar=true
           if [ "${{ github.event_name }}" = "schedule" ]; then
             agora=$(date -u +%s)
-            # Último horário do Supabase até agora (hoje ou, de madrugada, ontem 21:53)
-            horario=$(date -u -d "yesterday 21:53" +%s)
-            for h in 09:53 15:53 21:53; do
+            # Último horário do Supabase até agora (hoje ou, de madrugada, ontem 18:53)
+            horario=$(date -u -d "yesterday 18:53" +%s)
+            for h in 09:53 18:53; do
               t=$(date -u -d "today $h" +%s)
               [ "$t" -le "$agora" ] && horario=$t
             done
