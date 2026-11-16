@@ -63,10 +63,10 @@ end $$;
 
 revoke all on function privado.disparar_busca_noticias() from public, anon, authenticated;
 
--- 4) Agenda 3x ao dia (o horário do pg_cron é UTC; Brasília = UTC-3):
---    Brasília 06:53, 12:53 e 18:53
+-- 4) Agenda 2x ao dia (o horário do pg_cron é UTC; Brasília = UTC-3):
+--    Brasília 06:53 e 15:53
 select cron.unschedule(jobid) from cron.job where jobname = 'buscar-noticias';
-select cron.schedule('buscar-noticias', '53 9,15,21 * * *', 'select privado.disparar_busca_noticias()');
+select cron.schedule('buscar-noticias', '53 9,18 * * *', 'select privado.disparar_busca_noticias()');
 
 -- 5) Teste (opcional): dispara agora e confere a resposta do GitHub.
 --    Rode esta linha:
